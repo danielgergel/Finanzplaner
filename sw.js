@@ -1,5 +1,5 @@
 /* Service Worker für den Finanzplaner: App und Bibliotheken werden zwischengespeichert, damit sie auch ohne Internet starten. */
-const V="finanzplaner-v1";
+const V="finanzplaner-v2";
 const CORE=["./","index.html","apple-touch-icon.png"];
 self.addEventListener("install",e=>{
   e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));
@@ -17,7 +17,7 @@ self.addEventListener("fetch",e=>{
       Promise.race([fetch(r).then(res=>{if(res.ok) return put(r,res); throw new Error("bad");}),new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),3000))])
         .catch(()=>caches.match(r).then(m=>m||caches.match("index.html")))
     );
-  }else if(/(^|\.)jsdelivr\.net$|(^|\.)gstatic\.com$|^fonts\.googleapis\.com$/.test(u.hostname)){
+  }else if(/(^|\.)jsdelivr\.net$|^cdnjs\.cloudflare\.com$|(^|\.)gstatic\.com$|^fonts\.googleapis\.com$/.test(u.hostname)){
     /* Bibliotheken und Schriften (Firebase, Google Fonts): einmal laden, dann aus dem Zwischenspeicher. Firestore-Verbindungen (googleapis.com) werden nie angefasst. */
     e.respondWith(caches.match(r).then(m=>m||fetch(r).then(res=>put(r,res))));
   }

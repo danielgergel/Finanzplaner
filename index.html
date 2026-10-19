@@ -627,7 +627,105 @@ function makeDemo(todayS){
   return {accs,tx};
 }
 
-if(typeof module!=="undefined"&&module.exports)module.exports={norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,autoIncome,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
+/* ---------- PDF-Text: Zeilen rekonstruieren und Buchungen erkennen (heuristisch) ---------- */
+function itemsToLines(items){
+  const its=items.filter(i=>i&&typeof i.str==="string"&&i.str.trim()!=="").map(i=>({s:i.str,x:i.transform[4],y:i.transform[5],w:i.width||0}));
+  its.sort((a,b)=>b.y-a.y||a.x-b.x);
+  const groups=[];
+  for(const it of its){const g=groups[groups.length-1];if(g&&Math.abs(g.y-it.y)<=2.5)g.it.push(it);else groups.push({y:it.y,it:[it]});}
+  return groups.map(g=>{
+    g.it.sort((a,b)=>a.x-b.x);let s="",px=null;
+    for(const it of g.it){if(px!=null&&it.x-px>1.5)s+=" ";s+=it.s;px=it.x+it.w;}
+    return s.replace(/\s+/g," ").trim();
+  }).filter(Boolean);
+}
+const MON_EN={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+const AMT_RE=/[-+]?\s?€?\s?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}(?![\d]|[.,]\d)\s?(?:CR|DR|S|H|[-+])?(?![A-Za-z0-9])/g;
+const PDF_SKIP=/^(alter|neuer|aktueller)\s+(kontostand|saldo)|kontostand|saldo\s*(vortrag|alt|neu|zum)|^übertrag|^uebertrag|^summe|^gesamt|^zwischensumme|^seite\s+\d+|^page\s+\d+|^\d+\s*\/\s*\d+$|\biban\b|\bbic\b|\bswift\b|buchungstag|^valuta|^datum\b|haben\s+soll|soll\s+haben|bankleitzahl|\bblz\b|^kontoauszug|^auszug|^umsatzübersicht|^umsätze\b|money (in|out)|^balance|^opening|^closing/i;
+function leadDate(line){
+  let m;
+  if((m=/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)\s*/.exec(line)))return {dd:+m[1],mm:+m[2],y:+m[3],rest:line.slice(m[0].length)};
+  if((m=/^(\d{1,2})\.(\d{1,2})\.(\d{2})(?![\d.])\s*/.exec(line)))return {dd:+m[1],mm:+m[2],y:2000+ +m[3],rest:line.slice(m[0].length)};
+  if((m=/^(\d{4})-(\d{2})-(\d{2})\s*/.exec(line)))return {dd:+m[3],mm:+m[2],y:+m[1],rest:line.slice(m[0].length)};
+  if((m=/^(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?,?\s+(\d{4})\s*/.exec(line))&&MON_EN[m[2].toLowerCase()])return {dd:+m[1],mm:MON_EN[m[2].toLowerCase()],y:+m[3],rest:line.slice(m[0].length)};
+  if((m=/^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\s*/.exec(line))&&MON_EN[m[1].toLowerCase()])return {dd:+m[2],mm:MON_EN[m[1].toLowerCase()],y:+m[3],rest:line.slice(m[0].length)};
+  if((m=/^(\d{1,2})\.(\d{1,2})\.(?!\d)\s*/.exec(line)))return {dd:+m[1],mm:+m[2],y:null,rest:line.slice(m[0].length)};
+  return null;
+}
+function tailAmount(line){
+  const toks=[];let m;AMT_RE.lastIndex=0;
+  while((m=AMT_RE.exec(line)))if(!/[0-9.,]/.test(line[m.index+m[0].search(/[0-9]/)-1]||""))toks.push({s:m[0],i:m.index,e:m.index+m[0].length});
+  if(!toks.length)return null;
+  const last=toks[toks.length-1];
+  if(!/^\s*(EUR|€)?\s*$/i.test(line.slice(last.e)))return null;
+  let use=last;
+  if(toks.length>=2){const p=toks[toks.length-2];if(last.i-p.e<=3)use=p;} /* zweiter Betrag am Ende = Saldo */
+  const raw=use.s.trim(),suf=/(CR|DR|S|H|[-+])$/i.exec(raw),pre=/^[-+]/.exec(raw);
+  const v=parseNum(raw.replace(/(CR|DR|S|H)$/i,"").replace(/^[-+]?\s?€?\s?/,"").replace(/[-+]$/,""),true);
+  if(isNaN(v))return null;
+  let sign=0;const sf=suf?suf[1].toUpperCase():"";
+  if(sf==="S"||sf==="DR"||sf==="-")sign=-1;else if(sf==="H"||sf==="CR"||sf==="+")sign=1;
+  else if(pre)sign=pre[0]==="-"?-1:1;
+  return {v,sign,start:use.i,end:last.e};
+}
+const POS_HINT=/gehalt|lohn\b|gutschrift|eingang|erstattung|rückzahlung|rueckzahlung|zahlung erhalten|top-?up|überweisung von|ueberweisung von|einzahlung|refund|salary/i;
+function detectPdfCtx(text,fname){
+  const c={start:null,end:null,year:null};let m;const iso=(d,mo,y)=>y+"-"+pad2(mo)+"-"+pad2(d);
+  if((m=/(\d{1,2})\.(\d{1,2})\.(\d{4})\s*(?:bis|-|–)\s*(\d{1,2})\.(\d{1,2})\.(\d{4})/i.exec(text))){c.start=iso(m[1],m[2],m[3]);c.end=iso(m[4],m[5],m[6]);return c;}
+  if((m=/kontoauszug\s*(?:nr\.?\s*)?(\d{1,2})\s*\/\s*(\d{4})/i.exec(text))){c.year=+m[2];return c;}
+  if((m=/(?:auszug|abrechnung|statement)[^\n]{0,40}?(20\d{2})/i.exec(text))){c.year=+m[1];return c;}
+  if(fname&&(m=/(20\d{2})/.exec(fname))){c.year=+m[1];return c;}
+  const all=[...text.matchAll(/(\d{1,2})\.(\d{1,2})\.(20\d{2})/g)].map(x=>iso(x[1],x[2],x[3])).sort();
+  if(all.length){c.start=all[0];c.end=all[all.length-1];}
+  return c;
+}
+function parsePdfLines(lines,opt){
+  opt=opt||{};
+  const text=lines.join("\n"),ctx=opt.ctx||detectPdfCtx(text,opt.fname),year=opt.year||null;
+  const rows=[],unrec=[];let cur=null,needYear=false;
+  const resolveY=mm=>{
+    if(year)return year;
+    if(ctx.start&&ctx.end){const sy=+ctx.start.slice(0,4),ey=+ctx.end.slice(0,4);return(sy!==ey&&mm>+ctx.end.slice(5,7))?sy:ey;}
+    return ctx.year||null;
+  };
+  const flush=()=>{
+    if(!cur)return;
+    if(cur.amt==null){unrec.push(cur.raw);}
+    else{
+      const t=cur.t.replace(/\s+/g," ").trim().slice(0,200);
+      let amt=cur.sign?cur.sign*Math.abs(cur.v):-Math.abs(cur.v);const guess=!cur.sign;
+      if(guess&&POS_HINT.test(t))amt=Math.abs(cur.v);
+      if(cur.d==null)needYear=true;
+      rows.push({d:cur.d,amt:Math.round(amt*100)/100,p:"",t,guess});
+    }
+    cur=null;
+  };
+  for(const line0 of lines){
+    const line=line0.trim();if(!line)continue;
+    const ld=leadDate(line);let body=ld?ld.rest:line;
+    if(ld){const l2=leadDate(body);if(l2&&(l2.y===ld.y||l2.y==null))body=l2.rest;} /* zweites Datum = Valuta */
+    if(PDF_SKIP.test(body)){flush();continue;}
+    if(ld){
+      flush();
+      if(ld.mm<1||ld.mm>12||ld.dd<1||ld.dd>31){unrec.push(line);continue;}
+      let d=null;
+      if(ld.y)d=ld.y+"-"+pad2(ld.mm)+"-"+pad2(ld.dd);else{const y=resolveY(ld.mm);if(y)d=y+"-"+pad2(ld.mm)+"-"+pad2(ld.dd);}
+      cur={d,t:"",amt:null,raw:line};
+      const ta=tailAmount(body);
+      if(ta){cur.amt=ta.v;cur.v=ta.v;cur.sign=ta.sign;cur.t=body.slice(0,ta.start);}else cur.t=body;
+    }else if(cur){
+      const ta=tailAmount(line);
+      cur.raw+=" | "+line;
+      if(cur.amt==null&&ta){cur.amt=ta.v;cur.v=ta.v;cur.sign=ta.sign;cur.t+=" "+line.slice(0,ta.start);}
+      else if(ta){const r=line;flush();unrec.push(r);}
+      else cur.t+=" "+line;
+    }else if(tailAmount(line)){unrec.push(line);}
+  }
+  flush();
+  return {rows,unrec,needYear,ctx};
+}
+
+if(typeof module!=="undefined"&&module.exports)module.exports={itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,autoIncome,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
 
 /* ===== APP: Speicher, Sync, Oberfläche ===== */
 const $=s=>document.querySelector(s);
@@ -771,10 +869,15 @@ function vImport(){
   const I=ui.imp;if(!I.acc||!S.accounts.some(a=>a.id===I.acc))I.acc=S.accounts[0]&&S.accounts[0].id;
   let h=`<h2 class="sec">Konto wählen</h2><div class="chips wrapc">${S.accounts.map(a=>`<button data-a="impAcc" data-id="${esc(a.id)}" aria-pressed="${a.id===I.acc}">${esc(a.name)}</button>`).join("")}</div>`;
   if(I.stage==="in"){
-    h+=`<div class="card"><label class="btn p w" for="csvf" tabindex="0" id="csvl">CSV-Datei wählen</label><input type="file" id="csvf" accept=".csv,.txt,text/csv,text/plain" hidden>
-    <p class="muted small cen">oder Text einfügen</p><textarea id="csvt" rows="5" placeholder="CSV-Text hier einfügen" aria-label="CSV-Text">${esc(I.text)}</textarea>
-    <button class="btn w" data-a="impText">Text einlesen</button>${I.msg?`<p class="err">${esc(I.msg)}</p>`:""}</div>
+    h+=`<div class="card"><label class="btn p w" for="csvf" tabindex="0" id="csvl">CSV- oder PDF-Datei wählen</label><input type="file" id="csvf" accept=".csv,.txt,.pdf,application/pdf,text/csv,text/plain" hidden>
+    <p class="muted small cen">Datei auch per Drag &amp; Drop oder Einfügen möglich. PDFs werden nur lokal im Browser gelesen.</p>
+    <p class="muted small cen">oder Text einfügen (CSV oder aus der PDF kopierter Text)</p><textarea id="csvt" rows="5" placeholder="CSV- oder PDF-Text hier einfügen" aria-label="CSV- oder PDF-Text">${esc(I.text)}</textarea>
+    <button class="btn w" data-a="impText">Text einlesen</button>${I.busy?`<p class="status" role="status">${esc(I.busy)}</p>`:""}${I.msg?`<p class="err" role="alert">${esc(I.msg)}</p>`:""}</div>
     <p class="muted small">Unterstützt ; und , als Trenner, UTF-8 und Windows-1252, deutsche Zahlen und Datumsformate. Doppelte Buchungen werden beim erneuten Import übersprungen.</p>`;
+  }else if(I.stage==="year"){
+    h+=`<div class="card"><p class="big">Jahr angeben</p><p class="muted small">In der PDF stehen Buchungsdaten ohne Jahr, und im Kopf war keins zu finden.</p>
+    <label class="fld">Jahr<input inputmode="numeric" id="pdfYear" value="${new Date().getFullYear()}"></label>
+    <div class="row"><button class="btn p" data-a="pdfYear">Weiter</button><button class="btn" data-a="impCancel">Abbrechen</button></div></div>`;
   }else if(I.stage==="map"){
     const a=I.a,hdr=a.rows[I.hr]||[],opt=(sel)=>`<option value="">(nicht vorhanden)</option>`+hdr.map((x,i)=>`<option value="${i}" ${sel===i?"selected":""}>${i+1}: ${esc(x.slice(0,28))}</option>`).join("");
     const F=[["date","Buchungsdatum *"],["amount","Betrag (oder Soll/Haben)"],["soll","Soll (Ausgaben)"],["haben","Haben (Einnahmen)"],["payee","Empfänger / Auftraggeber"],["text","Verwendungszweck"],["bal","Saldo"]];
@@ -788,9 +891,10 @@ function vImport(){
     <div class="kv"><span>Neu</span><b class="num">${nw.length}</b></div><div class="kv"><span>Duplikate (übersprungen)</span><b class="num">${I.rows.length-nw.length}</b></div><div class="kv"><span>Nicht lesbare Zeilen</span><b class="num">${I.skipped}</b></div>
     <div class="kv"><span>Summe neu</span><b class="num">${fmt(nw.reduce((s,r)=>s+r.amt,0))}</b></div>
     <label class="chk"><input type="checkbox" data-ch="inv" ${I.inv?"checked":""}> Vorzeichen umkehren (z. B. Amex: Ausgaben positiv)</label>
-    <p class="muted small">Trenner „${esc(I.a.delim==="\t"?"Tab":I.a.delim)}“ · Spalten: Datum ${I.a.cols.date+1}${I.a.cols.amount!=null?", Betrag "+(I.a.cols.amount+1):""}</p>
+    ${I.src==="pdf"?`<p class="muted small">Quelle: PDF-Text, heuristisch erkannt. Bitte Vorschau prüfen${I.guess?", bei "+I.guess+" Buchungen wurde das Vorzeichen geschätzt (der Haken unten kehrt alle um)":""}. CSV ist verlässlicher.</p>`:`<p class="muted small">Trenner „${esc(I.a.delim==="\t"?"Tab":I.a.delim)}“ · Spalten: Datum ${I.a.cols.date+1}${I.a.cols.amount!=null?", Betrag "+(I.a.cols.amount+1):""}</p>`}
     ${I.rows.slice(0,5).map(r=>`<div class="tl static"><span class="td">${dShort(r.d)}</span><span class="tt">${esc((r.p+" "+r.t).trim().slice(0,50))}${r.dup?" (Duplikat)":""}</span><span class="num ${r.amt>0?"pos":""}">${fmt(r.amt)}</span></div>`).join("")}
-    ${I.rows.length>5?`<p class="muted small">… und ${I.rows.length-5} weitere</p>`:""}</div>
+    ${I.rows.length>5?`<p class="muted small">… und ${I.rows.length-5} weitere</p>`:""}
+    ${I.unrec&&I.unrec.length?`<details class="dt" data-id="unrec"><summary>Nicht erkannt (${I.unrec.length})</summary><div class="dbody"><p class="muted small">Diese Zeilen wurden keiner Buchung zugeordnet. Fehlt etwas, bitte per CSV importieren oder manuell prüfen.</p>${I.unrec.slice(0,40).map(u=>`<div class="tl static"><span class="tt" style="white-space:normal">${esc(u.slice(0,160))}</span></div>`).join("")}</div></details>`:""}</div>
     <div class="stickybar"><button class="btn p w" data-a="impOk" ${nw.length?"":"disabled"}>${nw.length} Buchungen übernehmen</button><button class="btn" data-a="impCancel">Abbrechen</button></div>`;
   }
   if(I.stage==="in"&&!S.tx.length)h+=`<button class="btn w" data-a="demo">Mit Beispieldaten ausprobieren</button>`;
@@ -862,12 +966,69 @@ function impBuild(a){
   if(!ex.rows.length){I.stage="in";I.msg="Keine lesbaren Buchungen gefunden. Prüfe Datei und Konto.";}
   render();
 }
+const PDFJS_V="3.11.174",PDFJS_BASE="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/"+PDFJS_V+"/";
+let _pdfP=null;
+function loadPdfJs(){
+  if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+  if(_pdfP)return _pdfP;
+  _pdfP=new Promise((res,rej)=>{
+    const s=document.createElement("script");s.src=PDFJS_BASE+"pdf.min.js";s.crossOrigin="anonymous";
+    s.onload=()=>{try{window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_BASE+"pdf.worker.min.js";res(window.pdfjsLib);}catch(e){rej(e);}};
+    s.onerror=()=>{_pdfP=null;rej(new Error("offline"));};
+    document.head.appendChild(s);
+  });
+  return _pdfP;
+}
+async function pdfToLines(buf){
+  const lib=await loadPdfJs();
+  const doc=await lib.getDocument({data:new Uint8Array(buf)}).promise;
+  const lines=[];
+  for(let p=1;p<=doc.numPages;p++){const pg=await doc.getPage(p);const tc=await pg.getTextContent();lines.push(...itemsToLines(tc.items));}
+  return lines;
+}
+async function impLoadFile(f){
+  const I=ui.imp;
+  if(!S.accounts.some(a=>a.id===I.acc)){toast("Bitte erst ein Konto anlegen");return;}
+  const head=new Uint8Array(await f.slice(0,5).arrayBuffer());
+  const isPdf=/\.pdf$/i.test(f.name)||f.type==="application/pdf"||String.fromCharCode(...head)==="%PDF-";
+  if(!isPdf){impLoad(decodeBuf(await f.arrayBuffer()));return;}
+  I.msg="";I.busy="PDF wird gelesen …";render();
+  try{
+    const lines=await pdfToLines(await f.arrayBuffer());
+    I.busy="";
+    if(lines.join("").length<20){I.msg="Diese PDF enthält keinen auswählbaren Text (Scan). Bitte CSV nutzen.";render();return;}
+    impStartPdf(lines,f.name);
+  }catch(e){
+    I.busy="";
+    I.msg=e&&e.name==="PasswordException"?"Diese PDF ist passwortgeschützt. Bitte ohne Passwort speichern oder CSV nutzen.":
+      (e&&e.message==="offline"?"Zum Lesen von PDFs muss einmalig die Bibliothek geladen werden (Internet nötig). Bitte später erneut versuchen oder CSV nutzen.":"Die PDF konnte nicht gelesen werden. Bitte CSV nutzen.");
+    render();
+  }
+}
+function impStartPdf(lines,fname){
+  const I=ui.imp;I.pdf={lines,fname,year:null};impBuildPdf();
+}
+function impBuildPdf(){
+  const I=ui.imp,acc=S.accounts.find(x=>x.id===I.acc),P=I.pdf;
+  const res=parsePdfLines(P.lines,{fname:P.fname,year:P.year});
+  if(!res.rows.length){I.stage="in";I.msg=res.unrec.length?"Es wurden keine Buchungen sicher erkannt ("+res.unrec.length+" unklare Zeilen). Bitte CSV nutzen.":"Im PDF-Text wurden keine Buchungen gefunden. Bitte CSV nutzen.";render();return;}
+  if(res.needYear){I.stage="year";render();return;}
+  const rows=res.rows.map(r=>({d:r.d,amt:acc.inv?-r.amt:r.amt,p:r.p,t:r.t,guess:r.guess}));
+  assignHashes(rows,acc.id);
+  const known=new Set(S.tx.map(t=>t.h));for(const d of S.del)known.add(d);
+  rows.forEach((r,i)=>{r.dup=known.has(r.h);r.o=i;});
+  Object.assign(I,{src:"pdf",rows,skipped:0,unrec:res.unrec,guess:rows.filter(r=>r.guess).length,inv:!!acc.inv,stage:"prev",msg:"",busy:""});
+  render();
+}
 function impLoad(text){
   const I=ui.imp,acc=S.accounts.find(x=>x.id===I.acc);if(!acc){toast("Bitte erst ein Konto anlegen");return;}
-  I.text="";
+  I.text="";I.src="csv";I.unrec=null;
   const a=analyzeCSV(text,acc.map);
   if(!a.rows.length){I.msg="Die Datei ist leer.";render();return;}
-  if(!a.ok){I.stage="map";I.a=a;I.hr=Math.min(a.rows.findIndex(r=>r.length>=3),a.rows.length-1);if(I.hr<0)I.hr=0;I.cols={};I.msg="";render();return;}
+  if(!a.ok){
+    const lines=text.split(/\r?\n/),pr=parsePdfLines(lines);
+    if(pr.rows.length&&pr.rows.length>=pr.unrec.length){impStartPdf(lines,"");return;}
+    I.stage="map";I.a=a;I.hr=Math.min(a.rows.findIndex(r=>r.length>=3),a.rows.length-1);if(I.hr<0)I.hr=0;I.cols={};I.msg="";render();return;}
   impBuild(a);
 }
 function impCommit(){
@@ -902,7 +1063,8 @@ const ACT={
   theme:el=>{META.theme=el.dataset.v;saveMeta();applyTheme();render();},
   impAcc:el=>{ui.imp.acc=el.dataset.id;ui.imp.stage="in";ui.imp.msg="";render();},
   impText:()=>{const v=($("#csvt")||{}).value||"";if(!v.trim()){ui.imp.msg="Bitte Text einfügen.";render();return;}impLoad(v);},
-  impCancel:()=>{ui.imp.stage="in";ui.imp.msg="";render();},
+  impCancel:()=>{ui.imp.stage="in";ui.imp.msg="";ui.imp.unrec=null;render();},
+  pdfYear:()=>{const y=parseInt(($("#pdfYear")||{}).value,10);if(!(y>=1990&&y<=2100)){toast("Bitte ein gültiges Jahr eingeben");return;}ui.imp.pdf.year=y;impBuildPdf();},
   impOk:()=>impCommit(),
   mapOk:()=>{
     const I=ui.imp,c=I.cols;
@@ -957,7 +1119,7 @@ const CH={
   accInv:el=>mutate(()=>{const a=S.accounts.find(x=>x.id===el.dataset.id);a.inv=el.checked;a.u=Date.now();},true),
   catName:el=>{const v=el.value.trim(),i=+el.dataset.i,old=S.cats[i];if(!v||v===old||S.cats.includes(v)){render();return;}
     mutate(()=>{S.cats[i]=v;for(const r of S.rules)if(r.c===old)r.c=v;for(const t of S.tx)if(t.c===old){t.c=v;t.u=Date.now();}for(const it of S.budget.items)it.cats=it.cats.map(x=>x===old?v:x);},true);},
-  inv:el=>{const I=ui.imp,acc=S.accounts.find(x=>x.id===I.acc);acc.inv=el.checked;acc.u=Date.now();save();impBuild(I.a);},
+  inv:el=>{const I=ui.imp,acc=S.accounts.find(x=>x.id===I.acc);acc.inv=el.checked;acc.u=Date.now();save();if(I.src==="pdf")impBuildPdf();else impBuild(I.a);},
   mapHr:el=>{ui.imp.hr=+el.value;ui.imp.cols=mapHeader(ui.imp.a.rows[ui.imp.hr]||[]);render();},
   mapCol:el=>{ui.imp.cols[el.dataset.f]=el.value===""?undefined:+el.value;}
 };
@@ -1100,7 +1262,7 @@ document.addEventListener("change",e=>{
   const el=e.target;
   if(el.dataset.vi&&VCH[el.dataset.vi]){V.last=Date.now();VCH[el.dataset.vi](el);return;}
   if(el.dataset.ch&&CH[el.dataset.ch]){CH[el.dataset.ch](el);return;}
-  if(el.id==="csvf"&&el.files[0]){const f=el.files[0];f.arrayBuffer().then(b=>impLoad(decodeBuf(b))).catch(()=>{ui.imp.msg="Datei konnte nicht gelesen werden.";render();});el.value="";}
+  if(el.id==="csvf"&&el.files[0]){const f=el.files[0];impLoadFile(f).catch(()=>{ui.imp.busy="";ui.imp.msg="Datei konnte nicht gelesen werden.";render();});el.value="";}
   if(el.id==="impj"&&el.files[0]){
     el.files[0].text().then(t=>{
       const j=JSON.parse(t);if(!j.state||!j.state.tx)throw new Error("kein Backup");
@@ -1115,6 +1277,11 @@ document.addEventListener("input",e=>{
   if(e.target.id==="ruleQ"){ui.ruleQ=e.target.value;const pos=e.target.selectionStart;render();const n=$("#ruleQ");if(n){n.focus();n.setSelectionRange(pos,pos);}}
 });
 document.addEventListener("keydown",e=>{V.last=Date.now();if((e.key==="Enter"||e.key===" ")&&e.target.tagName==="LABEL"){e.preventDefault();e.target.click();}if(e.key==="Escape"){if(V.open)vaultLock();else if(ui.sheet){ui.sheet=null;render();}}});
+/* Drag & Drop und Einfügen von Dateien im Import-Reiter */
+const impOpen=()=>ui.tab==="im"&&ui.imp.stage==="in";
+document.addEventListener("dragover",e=>{if(impOpen())e.preventDefault();});
+document.addEventListener("drop",e=>{if(!impOpen())return;e.preventDefault();const f=e.dataTransfer&&e.dataTransfer.files[0];if(f)impLoadFile(f).catch(()=>{ui.imp.busy="";ui.imp.msg="Datei konnte nicht gelesen werden.";render();});});
+document.addEventListener("paste",e=>{if(!impOpen())return;const f=e.clipboardData&&e.clipboardData.files&&e.clipboardData.files[0];if(f){e.preventDefault();impLoadFile(f).catch(()=>{});}});
 document.addEventListener("pointerdown",()=>{V.last=Date.now();},true);
 document.addEventListener("toggle",e=>{const id=e.target.dataset&&e.target.dataset.id;if(id)ui.det[id]=e.target.open;},true);
 document.addEventListener("visibilitychange",()=>{if(document.hidden)vaultLock();else if(META.pass&&SY.ready)schedulePush();});
