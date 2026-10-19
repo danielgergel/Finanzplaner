@@ -3,7 +3,7 @@
 Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics, keine Drittanbieter-Skripte außer Firebase (gstatic) und Google Fonts.
 
 ## Deployment
-Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v1`) lädt Netz zuerst (3 s), dann Cache.
+Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v3`) lädt Netz zuerst (3 s), dann Cache.
 
 ## CSV-Import
 Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfen (neu/Duplikate), übernehmen.
@@ -41,8 +41,21 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v2` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v3` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
 - Grenzen: Der Parser ist heuristisch und kennt keine bankspezifischen Layouts. Spaltenlayouts mit getrennten Soll/Haben-Spalten ohne Vorzeichen, mehrere Betragsspalten oder ungewöhnliche Zeilenumbrüche können falsch gelesen werden. CSV ist verlässlicher; PDF nur nutzen, wenn kein CSV-Export verfügbar ist, und die Vorschau immer prüfen.
+
+## Bedienung (Version 3, UX-Überarbeitung)
+Vier Reiter: **Monat** (Startseite), **Sortieren**, **Import**, **Mehr**.
+- **Monat:** Ein Satz oben ("Bisher X ausgegeben · Prognose Monatsende Y · Einnahmen Z · übrig N"), dann Hinweise (unsortiert, Umbuchungen, Konten ohne Buchungen), die Aufteilung Einnahmen / Fixkosten / Variable Ausgaben / Sparen und Anlegen / Unsortiert / Übrig und die Ampel-Liste der Kategorien (Rot zuerst, Top 5, "Alle anzeigen"). Tipp auf eine Kategorie öffnet ein Bottom-Sheet mit den Buchungen. Der Monatswechsel sitzt unten. Beim Start öffnet sich der letzte Monat mit Daten.
+- **Ampel:** Grün unter 90 % des Richtwerts, Gelb ab 90 % bis zum Richtwert (oder Prognose über 110 %), Rot darüber. Prognose erst ab dem 8. des Monats, Bezugstag = min(heute, letzte Buchung), Fixposten (Miete, Abos, Versicherungen, Weiterbildung ...) werden nicht hochgerechnet.
+- **Richtwert:** Mein Plan, sonst Durchschnitt Deutschland (als "Standardwert" markiert). Umschalten nur unter Mehr, Richtwerte. Jede Kategorie ist ein eigener Budgetposten.
+- **Umbuchungen (zählen nicht):** Übertrag zwischen eigenen Konten und Kreditkarte bezahlt. Erkennung per Regeln und strenger Paarung (exakt gleicher Betrag, gegenläufig, verschiedene Konten, max. 3 Tage, ab 5 Euro; Text nach Übertrag ODER genau ein Kandidat). Die Zeile "Umbuchungen ignoriert" öffnet die Liste, jede Buchung lässt sich als normale Buchung zurückholen (Feld `nt`).
+- **Sortieren:** Händlerkarten nach Betrag, ein Tipp auf die Kategorie ordnet alle Buchungen zu und legt eine Regel an. Eingänge getrennt unter "Eingänge prüfen". "Später" überspringt.
+- **Gehalt:** Wird nichts erkannt, fragt die Monatsansicht "Welche Buchung ist dein Gehalt?". Der laufende Teilmonat zählt nicht in den Durchschnitt. Trading-Auszahlungen zählen als Rückfluss (Einnahme), Netto-Trading wird angezeigt.
+- **Import:** Statuszeile pro Konto ("zuletzt importiert bis"), nach dem Import ein Ergebnis-Dialog. Duplikate: exakter Hash, außerdem gleiches Datum, Betrag und Konto mit gemeinsamem Wort (z. B. dieselbe Buchung aus PDF und CSV); gleiches Datum, Betrag und Konto mit anderem Text ist ein "mögliches Duplikat" (Rückfrage in der Vorschau).
+
+## Datenformat und Migration
+Schema-Version 2. Alte Daten (Version 1) werden beim Laden additiv migriert: nichts wird gelöscht oder umbenannt (auch der interne Kategoriename "Eigene Überträge" bleibt, nur die Anzeige heißt "Umbuchungen (zählen nicht)"). Der Sammelposten "Online-Shopping, Drogerie, Sonstiges" wird in einzelne Posten aufgeteilt (Plan skaliert), die alten Standardregeln SPARDA und PAYPAL werden durch genauere ersetzt, neue Standardregeln am Ende ergänzt, eigene Regeln und Werte bleiben unverändert. Neue Felder sind optional (`nt` an Buchungen). Ältere App-Versionen können weiter synchronisieren; die Migration ist idempotent und ändert beim Sync-Merge keinen Zeitstempel der Gegenseite.
