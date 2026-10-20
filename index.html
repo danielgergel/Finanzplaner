@@ -215,6 +215,13 @@ svg.donut .dlab{font:500 12px var(--f-body);fill:var(--muted)}
 .covbar i{position:absolute;top:0;bottom:0;background:var(--accent);border-radius:5px}
 input[type=date]{width:100%;min-height:46px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-size:17px;padding:0 12px;margin-top:4px}
 
+svg.donut.small{width:min(200px,60vw)}
+svg.donut .dtot.sm{font-size:20px}
+.plist li .lrow{display:grid;grid-template-columns:auto 1fr auto 52px;gap:8px;align-items:center;min-height:38px;border-top:1px solid var(--line);padding:2px}
+.plist li:first-child .lrow{border-top:0}
+.bt .dot{margin:0}
+body.hasnav{padding-block-end:calc(170px + env(safe-area-inset-bottom,0px))}
+
 </style></head><body>
 <div class="wrap">
 <header><div class="hin"><h1 id="ttl">Finanzplaner</h1>
@@ -617,6 +624,12 @@ function donutData(S,ym,cmap,mode){
   let more=[];
   if(small.length>=2){more=small;const amt=small.reduce((s,x)=>s+x.amt,0);big.push({key:"__more",amt,pct:total?amt/total*100:0,color:catColor("__more"),members:small});segs=big.sort((a,b)=>(a.key==="__more")-(b.key==="__more")||b.amt-a.amt);}
   return {total,segs,more};
+}
+/* Ø pro Monat: Aufteilung des Einkommens fuer den kleinen Donut */
+function incomeSplit(R){
+  const parts=[["fix","Fixkosten",R.fix,"#4f46e5"],["var","Variabel",R.var,"#f97316"],["save","Sparen / Anlegen",R.save,"#22c55e"],["uns","Unsortiert",R.uns,"#9ca3af"],["left","Übrig",Math.max(0,R.left),"#14b8a6"]].filter(p=>p[2]>0.005);
+  const total=parts.reduce((s,p)=>s+p[2],0);
+  return {total,over:R.left<0,segs:parts.map(([key,label,amt,color])=>({key,label,amt,pct:total?amt/total*100:0,color}))};
 }
 /* Diagnose je Konto: nur Zahlen, keine Texte oder Namen aus Buchungen */
 function importDiag(S){
@@ -1101,7 +1114,7 @@ function parsePdfLines(lines,opt){
   return {rows,unrec,needYear,ctx};
 }
 
-if(typeof module!=="undefined"&&module.exports)module.exports={MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
+if(typeof module!=="undefined"&&module.exports)module.exports={incomeSplit,MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
 
 /* ===== APP: Speicher, Sync, Oberfläche ===== */
 const $=s=>document.querySelector(s);
@@ -1204,6 +1217,9 @@ function vMonth(){
   const spent=ag.fix+ag.var+ag.unsOut,left=ag.inc-ag.exp;
   let projSpent=0;for(const r of all)if(groupOf(S,r.it.cats[0])!=="save")projSpent+=r.pr;projSpent+=canProj?ag.unsOut/pd*dim:ag.unsOut;
   let h=`<p class="lead">Bisher <b>${fmt0(spent)}</b> ausgegeben${canProj?` · Prognose Monatsende <b>${fmt0(projSpent)}</b>`:""} · Einnahmen <b>${fmt0(ag.inc)}</b> · übrig <b class="${left<0?"neg":"pos"}">${sgn0(left).replace("+","")}</b></p>`;
+  h+=accFilterHtml();
+  {const cp=commonPeriod(S);if(cp&&cp.lastMonth&&ym!==cp.lastMonth)h+=`<button class="linkline" data-a="monthCommon">Zum letzten vollständigen Monat (${mLabel(cp.lastMonth)}, alle Konten)</button>`;}
+  if(ag.n)h+=donutCard(SV,cm,ym);
   const pv=monthAgg(SV,shiftYM(ym,-1),cm),subs=[];
   if(!inc.missing)subs.push(`Dein Gehalt: ${fmt0(inc.v)} (${esc(inc.src)})`);
   if(pv.n&&!coverageGaps(S,shiftYM(ym,-1)).length)subs.push(`Vormonat: ${fmt0(pv.fix+pv.var+pv.unsOut)} ausgegeben`);
@@ -1212,9 +1228,6 @@ function vMonth(){
   if(ag.n){const pT=ag.tx.filter(t=>t.amt>0),gh=pT.filter(t=>cm.get(t.h)===INCOME).reduce((s,t)=>s+t.amt,0);
     h+=`<button class="linkline" data-a="einn">Einnahmen: ${fmt0(ag.inc)} aus ${pT.length} Buchungen (Gehalt: ${fmt0(gh)}) – Tippen für Details</button><button class="linkline" data-a="tab" data-t="avg">Ø pro Monat und Fixkosten ansehen</button>`;}
   if(!ag.n)h+=`<p class="empty">In diesem Monat gibt es keine Buchungen.</p>`;
-  h+=accFilterHtml();
-  {const cp=commonPeriod(S);if(cp&&cp.lastMonth&&ym!==cp.lastMonth)h+=`<button class="linkline" data-a="monthCommon">Zum letzten vollständigen Monat (${mLabel(cp.lastMonth)}, alle Konten)</button>`;}
-  if(ag.n)h+=donutCard(SV,cm,ym);
   /* Gehalt erkennen */
   if(!S.budget.income&&!META.incSkip&&!S.tx.some(t=>cm.get(t.h)===INCOME)){
     const cands=S.tx.filter(t=>t.amt>0&&cm.get(t.h)!==TRANSFER&&cm.get(t.h)!==INCOME).sort((a,b)=>b.amt-a.amt).slice(0,5);
@@ -1257,9 +1270,8 @@ function vMonth(){
     h+=`<h2 class="sec">Kategorien: Ist / Richtwert</h2>`;
     for(const r of shown){
       const o=r.rf.src==="Plan"?(r.rf.de!=null?"Durchschnitt DE "+fmt0(r.rf.de):""):(r.rf.plan!=null?"Plan "+fmt0(r.rf.plan):"");
-      h+=`<button class="brow" data-a="catd" data-i="${r.i}" aria-label="${esc(r.it.n)}, ${AMPW[r.am]}, Details öffnen"><div class="bt"><span class="amp ${r.am}"></span><b>${esc(r.it.n)}</b><span class="num">${fmt0(r.ist)} <small>/ ${r.rf.ref>0?fmt0(r.rf.ref):"–"}</small></span></div>
-      <div class="bar b2"><s class="${r.am}" style="width:${Math.min(100,r.q*100)}%"></s></div>
-      <div class="bm">${r.rf.ref>0?`<span>${Math.round(r.q*100)} %</span>`:`<span>kein Richtwert</span>`}${r.rf.std?`<span class="std">Standardwert (Durchschnitt DE)</span>`:""}${r.warn?`<span class="warnt">Prognose ${fmt0(r.pr)}</span>`:""}${o?`<span class="faint">${o}</span>`:""}</div>${r.it.note?`<div class="note">${esc(r.it.note)}</div>`:""}</button>`;
+      h+=`<button class="brow" data-a="catd" data-i="${r.i}" aria-label="${esc(r.it.n)}, ${AMPW[r.am]}, Details öffnen"><div class="bt"><span class="amp ${r.am}"></span><i class="dot" style="background:${catColor(r.it.cats[0])}"></i><b>${r.am==="r"&&!r.it.goal?"⚠ ":""}${esc(r.it.n)}</b><span class="num">${fmt0(r.ist)} <small>/ ${r.rf.ref>0?fmt0(r.rf.ref):"–"} · ${r.rf.ref>0?Math.round(r.q*100)+" %":"kein Richtwert"}</small></span></div>
+      <div class="bm">${r.rf.std?`<span class="std">Standardwert (Durchschnitt DE)</span>`:""}${r.warn?`<span class="warnt">Prognose ${fmt0(r.pr)}</span>`:""}${o?`<span class="faint">${o}</span>`:""}</div>${r.it.note?`<div class="note">${esc(r.it.note)}</div>`:""}</button>`;
     }
     if(rows.length>5)h+=`<button class="btn w" data-a="allCats">${ui.allCats?"Nur die ersten 5 zeigen":"Alle "+rows.length+" Kategorien anzeigen"}</button>`;
     h+=`<p class="muted small">Grün: unter 90 % des Richtwerts · Gelb: 90 % bis zum Richtwert oder Prognose über 110 % · Rot: über dem Richtwert. Richtwert = dein Plan, sonst Durchschnitt Deutschland (grobe Orientierung). Anpassen unter Mehr.</p>`;
@@ -1268,6 +1280,13 @@ function vMonth(){
   return h+`<details class="dt card" data-id="accs" ${ui.det.accs?"open":""}><summary>Konten-Stand</summary><div class="dbody">${st.all.length?st.all.map(x=>`<p class="small">${x}</p>`).join(""):`<p class="small muted">Noch kein Konto importiert.</p>`}</div></details>`;
 }
 /* ---------- Ø pro Monat (nur vollständige Monate je Konto) ---------- */
+function avgDonut(R){
+  const D=incomeSplit(R);if(!D.total)return "";
+  const Rr=54,CI=2*Math.PI*Rr;let off=0;
+  const circ=D.segs.map(s=>{const len=s.amt/D.total*CI,e=`<circle cx="80" cy="80" r="${Rr}" fill="none" stroke="${s.color}" stroke-width="24" stroke-dasharray="${len.toFixed(2)} ${(CI-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 80 80)"/>`;off+=len;return e;}).join("");
+  const aria=D.segs.map(s=>s.label+" "+fmt0(s.amt)+", "+pctTxt(s.pct)).join("; ");
+  return `<svg viewBox="0 0 160 160" class="donut small" role="img" aria-label="Aufteilung ${D.over?"der Ausgaben, sie liegen über dem Einkommen":"des Einkommens"} pro Monat: ${esc(aria)}">${circ}<text x="80" y="80" text-anchor="middle" class="dtot sm">${fmt0(D.over?D.total:R.inc)}</text><text x="80" y="98" text-anchor="middle" class="dlab">${D.over?"Ausgaben":"Einkommen"}</text></svg><ul class="plist">${D.segs.map(s=>`<li><div class="lrow"><i class="dot" style="background:${s.color}"></i><span class="pn">${esc(s.label)}</span><span class="num">${fmt0(s.amt)}</span><span class="pp num">${pctTxt(s.pct)}</span></div></li>`).join("")}</ul>${D.over?`<p class="warnt">⚠ Die Ausgaben liegen im Schnitt über dem Einkommen.</p>`:""}`;
+}
 function vAvg(){
   const cm=cmap(),N=ui.avgN,R=avgReport(S,cm,N),few=n=>n<3?` <span class="warnt">wenig Daten</span>`:"";
   const ab=n=>`<small class="faint">Ø aus ${n} ${n===1?"Monat":"Monaten"}</small>${few(n)}`;
@@ -1276,7 +1295,7 @@ function vAvg(){
   <div class="chips" role="group" aria-label="Zeitraum">${[[3,"Letzte 3"],[6,"Letzte 6"],[12,"Letzte 12"],[0,"Alle vollständigen"]].map(([n,l])=>`<button data-a="avgN" data-n="${n}" aria-pressed="${N===n}">${l}</button>`).join("")}</div>`;
   if(!R.accs.length)return h+`<div class="card"><p class="big">Noch kein vollständiger Monat.</p><p class="muted">Importiere einen Zeitraum, der mindestens einen ganzen Kalendermonat umfasst (vom 1. bis zum Monatsletzten).</p><button class="btn p w" data-a="tab" data-t="im">Zum Import</button></div>`;
   const line=(l,v,n,cls)=>`<div class="kv"><span>${l}<br>${ab(n)}</span><b class="num ${cls||""}">${fmt0(v)}</b></div>`;
-  h+=`<section class="card"><h2 class="sec">Pro Monat im Schnitt</h2>${line("Einnahmen pro Monat",R.inc,R.incN||R.nMin,"pos")}${line("Fixkosten pro Monat",R.fix,R.nMin)}${line("Variabel pro Monat",R.var,R.nMin)}${line("Sparen / Anlegen pro Monat",R.save,R.nMin)}${R.uns?line("Unsortiert pro Monat",R.uns,R.nMin):""}<div class="kv tot"><span>Übrig pro Monat</span><b class="num ${R.left<0?"neg":"pos"}">${R.left<0?"−":""}${fmt0(Math.abs(R.left))}</b></div></section>`;
+  h+=`<section class="card"><h2 class="sec">Pro Monat im Schnitt</h2>${avgDonut(R)}${line("Einnahmen pro Monat",R.inc,R.incN||R.nMin,"pos")}${line("Fixkosten pro Monat",R.fix,R.nMin)}${line("Variabel pro Monat",R.var,R.nMin)}${line("Sparen / Anlegen pro Monat",R.save,R.nMin)}${R.uns?line("Unsortiert pro Monat",R.uns,R.nMin):""}<div class="kv tot"><span>Übrig pro Monat</span><b class="num ${R.left<0?"neg":"pos"}">${R.left<0?"−":""}${fmt0(Math.abs(R.left))}</b></div></section>`;
   const rowHtml=r=>{
     const it=S.budget.items.find(i=>i.cats.includes(r.cat)),pl=r.group==="fix"&&it?refOf(S,it,0).plan:null;
     return `<div class="kv"><span>${esc(r.cat==="(unsortiert)"?"Unsortiert":catLabel(r.cat))}<br>${ab(r.n)}${pl>0?` <small class="${Math.abs(pl-r.avg)>Math.max(5,pl*0.1)?"warnt":"faint"}">· Plan ${fmt0(pl)} · real ${fmt0(r.avg)}</small>`:""}</span><b class="num">${fmt0(r.avg)}</b></div>`;
@@ -1469,7 +1488,7 @@ function vSettings(){
     (sy?`<button class="btn w" data-a="syNow">Jetzt synchronisieren</button><button class="btn w" data-a="syOff">Sync trennen</button>`:
     `<label class="fld">Sync-Passphrase<input type="password" id="syPass" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
      <button class="btn p w" data-a="syNew">Sync einrichten</button><button class="btn w" data-a="syJoin">Mit bestehender Passphrase verbinden</button>`));
-  h+=`<p class="muted small cen">Finanzplaner v6 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
+  h+=`<p class="muted small cen">Finanzplaner v7 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
   return h;
 }
 

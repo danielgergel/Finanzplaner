@@ -3,7 +3,7 @@
 Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics, keine Drittanbieter-Skripte außer Firebase (gstatic) und Google Fonts.
 
 ## Deployment
-Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v6`) lädt Netz zuerst (3 s), dann Cache.
+Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v7`) lädt Netz zuerst (3 s), dann Cache.
 
 ## CSV-Import
 Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfen (neu/Duplikate), übernehmen.
@@ -41,7 +41,7 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v6` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v7` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
@@ -97,3 +97,6 @@ Solange weder Einkommen noch Plan gesetzt sind, gibt es keine Ampel, sondern ein
 - **Eigene Buchungen:** Plus-Knopf unten rechts (Betrag, Ausgabe/Einnahme, Kategorie, Datum, Notiz, Konto, optional "Jeden Monat wiederholen" mit Enddatum). Markierung ✎, bzw. ⟳ bei Dauerposten; bearbeiten und löschen über die Buchung, Dauerposten außerdem unter Mehr. Sie zählen in alle Summen, Diagramme und Ø pro Monat. Sie liegen im virtuellen Konto "Manuell" (immer voll abgedeckt, keine Abdeckungs-Warnung) und werden von Importen und der Duplikat-Erkennung nie verändert. Neue Felder: `man`, `rec` an Buchungen, `recur[]` (Dauerposten), Konto `man`, `delw` (Löschzeitstempel). Schema 4, additiv und idempotent migriert, ältere App-Versionen verlieren beim Sync nichts.
 - **Neu aufsetzen** (Mehr): "Nur Buchungen löschen (Einstellungen behalten)" entfernt alle importierten Buchungen samt Import-Hashes und behält Konten, Kategorien, Regeln, Plan, feste Kosten, Profil, Tresor sowie manuelle Buchungen und Dauerposten. Mit Sync werden die gelöschten Buchungen über Löschzeitstempel auch auf anderen Geräten entfernt, ein Neuimport bleibt trotzdem erhalten. Danach alle Konten für denselben Zeitraum neu laden.
 - **Sauber importieren** (Import): Leitfaden (gleicher Zeitraum für alle Konten, ganze Monate), Abdeckung je Konto als Balken mit von/bis, "Gemeinsamer Zeitraum aller Konten" mit dem begrenzenden Konto und Warnung bei deutlich kürzeren oder längeren Konten. Konten, die seit mehr als 62 Tagen nichts Neues haben, blockieren den gemeinsamen Zeitraum nicht. Die Monatsansicht startet auf dem letzten Monat, den alle aktiven Konten vollständig abdecken.
+
+## Version 7: Donut als Hauptansicht
+Das Kreisdiagramm steht direkt unter der Zusammenfassung der Monatsansicht (Kontofilter darüber). Die Kategorie-Zeilen haben keine Fortschrittsbalken mehr, sondern Ampel-Punkt, Segmentfarbe als Punkt und Text "Ist / Richtwert · Prozent". Rote Kategorien tragen zusätzlich ⚠ (Farbenblindheit). Ø pro Monat zeigt die Aufteilung des Einkommens (Fixkosten, Variabel, Sparen, Übrig) als kleinen Donut. Das Balken-Element bleibt nur als Zeitachse im Import-Leitfaden und als Fortschritt im Sortieren-Ablauf. Daten und Schema unverändert.
