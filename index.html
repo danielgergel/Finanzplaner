@@ -195,6 +195,25 @@ button.klink{width:100%;background:transparent;border:0;font:inherit;color:inher
 .fxr .nm{grid-column:1/-1}
 .fxr input,.fxr select{margin-top:0}
 .diag{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}.diag:first-of-type{border-top:0}
+button.linkline{display:block;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px dashed var(--line);color:var(--accent);font:inherit;font-size:14px;min-height:44px;padding:4px 0;margin-bottom:6px}
+
+#fab{position:fixed;right:16px;bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:9;width:56px;height:56px;border-radius:50%;border:0;background:var(--accent);color:var(--accent-fg);font:600 32px/1 var(--f-body);box-shadow:0 4px 14px rgba(0,0,0,.35)}
+svg.donut{display:block;width:min(280px,80vw);height:auto;margin:10px auto}
+svg.donut circle{cursor:pointer;transition:opacity .15s}
+svg.donut circle:hover,svg.donut circle:focus-visible{opacity:.8;outline:none;stroke-width:34}
+svg.donut .dtot{font:700 26px var(--f-disp);fill:var(--fg)}
+svg.donut .dlab{font:500 12px var(--f-body);fill:var(--muted)}
+.plist{list-style:none;margin:6px 0 0;padding:0}
+.plist li button{display:grid;grid-template-columns:auto 1fr auto 52px;gap:8px;align-items:center;width:100%;min-height:44px;background:transparent;border:0;border-top:1px solid var(--line);text-align:left;padding:4px 2px;font:inherit;color:inherit}
+.plist li:first-child button{border-top:0}
+.plist li.sub button{padding-left:22px;font-size:14px}
+.plist .pp{color:var(--muted);text-align:right}
+.plist .dot{margin:0}
+.steps{margin:4px 0 8px;padding-left:20px;font-size:15px}
+.cov{margin:6px 0}
+.covbar{position:relative;height:9px;background:var(--surface2);border-radius:5px;overflow:hidden}
+.covbar i{position:absolute;top:0;bottom:0;background:var(--accent);border-radius:5px}
+input[type=date]{width:100%;min-height:46px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-size:17px;padding:0 12px;margin-top:4px}
 
 </style></head><body>
 <div class="wrap">
@@ -202,7 +221,7 @@ button.klink{width:100%;background:transparent;border:0;font:inherit;color:inher
 <nav class="seg" role="tablist" aria-label="Bereiche"><button role="tab" data-tab="ov" aria-selected="true">Monat</button><button role="tab" data-tab="so" aria-selected="false">Sortieren</button><button role="tab" data-tab="im" aria-selected="false">Import</button><button role="tab" data-tab="more" aria-selected="false">Mehr</button></nav></div></header>
 <main id="main"></main>
 </div>
-<div id="bnav" hidden></div><div id="wiz"></div><div id="sheet"></div><div id="ov"></div><div id="toast" role="status" aria-live="polite"></div>
+<div id="bnav" hidden></div><button id="fab" hidden data-a="addOpen" aria-label="Eigene Buchung hinzufügen">+</button><div id="wiz"></div><div id="sheet"></div><div id="ov"></div><div id="toast" role="status" aria-live="polite"></div>
 <script>
 /* ===== KERN: Parser, Kategorien, Auswertung, Krypto, Merge (ohne DOM) ===== */
 const TRANSFER="Eigene Überträge", INCOME="Einkommen", UNSORTED="Zu sortieren";
@@ -282,7 +301,7 @@ const HINTS={
 };
 
 /* ---------- Hilfen ---------- */
-const SCHEMA=3;
+const SCHEMA=4;
 const catLabel=c=>c===TRANSFER?"Umbuchungen (zählen nicht)":c;
 const SAVECATS=["Sparen","Rücklagen","Trading"];
 const fixedSum=(S,it)=>{let s=0;for(const f of S.fixed||[])if(it.cats.includes(f.cat))s+=+f.amt||0;return s;};
@@ -293,6 +312,8 @@ function ensureItems(S){
   const have=new Set(S.budget.items.flatMap(i=>i.cats));
   for(const c of S.cats){ if(c===INCOME||c===TRANSFER||have.has(c))continue; S.budget.items.push({n:c,cats:[c],plan:null,pct:null}); have.add(c); }
 }
+const mkey=t=>t.mo||t.d.slice(0,7);
+const takeRows=(rows,takeMaybe)=>rows.filter(r=>!r.dup&&(!r.maybe||takeMaybe||r.amt>0)); /* moegliche Duplikate: Eingaenge nie still verwerfen */
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 const pad2=n=>String(n).padStart(2,"0");
 const dayNum=d=>Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))/864e5;
@@ -482,7 +503,7 @@ function resolveAll(S){
       if(!cs.length)continue;
       let best=cs[0],bd=1e9;for(const p of cs){const dd=Math.abs(dayNum(n.d)-dayNum(p.d));if(dd<bd){bd=dd;best=p;}}
       const rev=b.neg.filter(x=>x!==n&&!used.has(x.h)&&near(x,best)).length;
-      const ok=txt(n)||txt(best)||(cs.length===1&&rev===0);
+      const ok=txt(n)||txt(best)||(cs.length===1&&rev===0&&Math.abs(n.amt)<500);
       if(!ok)continue;
       used.add(best.h);used.add(n.h);
       const cn=out.get(n.h),cp=out.get(best.h);
@@ -499,7 +520,7 @@ function catsOf(S,ver){ if(_catCache.ver!==ver||_catCache.S!==S){_catCache={ver,
 function monthAgg(S,ym,cmap){
   const a={inc:0,exp:0,byCat:{},unsorted:[],n:0,tx:[],trans:[],transSum:0,fix:0,var:0,save:0,unsOut:0,unsIn:0,tradeIn:0,tradeOut:0,last:"",ins:[],insSum:0};
   for(const t of S.tx){
-    if(t.d.slice(0,7)!==ym)continue;
+    if(mkey(t)!==ym)continue;
     a.n++;if(t.d>a.last)a.last=t.d;
     const c=cmap.get(t.h);
     if(c===TRANSFER){a.trans.push(t);continue;}
@@ -522,6 +543,81 @@ function monthAgg(S,ym,cmap){
   a.saldo=a.inc-a.exp;
   return a;
 }
+/* Gehalt, das kurz vor Monatsende bzw. zu Monatsbeginn gebucht wurde und deshalb im Nachbarmonat steht */
+function boundaryIncome(S,ym,cmap){
+  const out=[];
+  for(const t of S.tx){
+    if(t.amt<=0||cmap.get(t.h)!==INCOME||t.mo)continue;
+    const k=t.d.slice(0,7),day=+t.d.slice(8,10);
+    if(k===shiftYM(ym,-1)&&day>=daysIn(k)-2)out.push(t);
+    else if(k===shiftYM(ym,1)&&day<=3)out.push(t);
+  }
+  return out.sort((a,b)=>b.amt-a.amt);
+}
+/* Dauerposten: je Monat ab Startdatum bis Enddatum (max. laufender Monat) eine Buchung mit festem Hash erzeugen */
+function materializeRecur(S,today){
+  let ch=false;const have=new Set(S.tx.map(t=>t.h)),del=new Set(S.del||[]),cur=today.slice(0,7);
+  for(const r of S.recur||[]){
+    const end=r.end?r.end.slice(0,7):cur,last=end<cur?end:cur,sd=+r.start.slice(8,10);let m=r.start.slice(0,7);
+    while(m<=last){
+      const h="rec-"+r.id+"-"+(r.rev||1)+"-"+m,d=m+"-"+pad2(Math.min(sd,daysIn(m)));
+      if(!have.has(h)&&!del.has(h)&&d>=r.start&&!(r.end&&d>r.end)){S.tx.push({h,a:r.a||"man",d,amt:r.amt,p:r.n,t:"Dauerposten",c:r.cat,man:true,rec:r.id,u:Date.now()});have.add(h);ch=true;}
+      m=shiftYM(m,1);
+    }
+  }
+  return ch;
+}
+function removeRecurTx(S,id){
+  const gone=S.tx.filter(t=>t.rec===id).map(t=>t.h);
+  S.tx=S.tx.filter(t=>t.rec!==id);for(const h of gone)S.del.push(h);
+}
+/* Nur importierte Buchungen loeschen: manuelle Buchungen und Dauerposten bleiben, Einstellungen bleiben */
+function wipeImported(S,now){
+  let n=0;
+  for(const t of S.tx)if(!t.man){S.delw[t.h]=now;n++;}
+  S.tx=S.tx.filter(t=>t.man);
+  S.del=S.del.filter(x=>x.startsWith("acc:")||x.startsWith("rec-"));
+  return n;
+}
+/* Gemeinsamer Zeitraum aller (aktiven) Konten */
+function commonPeriod(S){
+  const cov=coverage(S);
+  const accs=S.accounts.filter(a=>!a.virtual&&cov[a.id]).map(a=>({id:a.id,name:a.name,first:cov[a.id].first,last:cov[a.id].last,complete:cov[a.id].complete}));
+  if(!accs.length)return null;
+  const maxLast=accs.reduce((m,a)=>a.last>m?a.last:m,"");
+  const act=accs.filter(a=>dayNum(maxLast)-dayNum(a.last)<=62); /* lange nicht mehr importierte Konten blockieren nicht */
+  const from=act.reduce((m,a)=>a.first>m?a.first:m,"0000-00-00"),to=act.reduce((m,a)=>a.last<m?a.last:m,"9999-99-99");
+  const lf=act.find(a=>a.first===from),lt=act.find(a=>a.last===to);
+  const spans=act.map(a=>dayNum(a.last)-dayNum(a.first)).sort((x,y)=>x-y),med=spans[Math.floor(spans.length/2)];
+  const warn=[];
+  if(act.length>1)for(const a of act){const sp=dayNum(a.last)-dayNum(a.first);if(Math.abs(sp-med)>45)warn.push({id:a.id,name:a.name,kind:sp<med?"kürzer":"länger"});}
+  const months=act.map(a=>a.complete).reduce((x,y)=>x.filter(m=>y.includes(m)));
+  return {accs,act,from,to,ok:from<=to,limFrom:lf&&lf.name,limTo:lt&&lt.name,warn,months,lastMonth:months.length?months[months.length-1]:null,inactive:accs.filter(a=>!act.includes(a))};
+}
+/* Kreisdiagramm: stabile Farben je Kategorie */
+const PALETTE=["#4f46e5","#0ea5e9","#14b8a6","#22c55e","#eab308","#f97316","#ef4444","#ec4899","#a855f7","#8b5cf6","#06b6d4","#84cc16","#f59e0b","#64748b","#d946ef","#10b981","#3b82f6","#e11d48","#7c3aed","#0d9488","#ca8a04"];
+function catColor(k){
+  if(k==null||k==="(unsortiert)")return "#9ca3af";if(k==="__more")return "#94a3b8";
+  let i=DEF_CATS.indexOf(k);if(i<0)i=parseInt(cyrb53(String(k)),36);
+  return PALETTE[i%PALETTE.length];
+}
+function donutData(S,ym,cmap,mode){
+  const sums=new Map();
+  for(const t of S.tx){
+    if(mkey(t)!==ym)continue;const c=cmap.get(t.h);if(c===TRANSFER)continue;
+    let key,v;
+    if(mode==="in"){if(t.amt<=0)continue;key=c==null?"(unsortiert)":c;v=t.amt;}
+    else if(mode==="acc"){if(t.amt>=0)continue;key=t.a;v=-t.amt;}
+    else{if(t.amt>=0)continue;key=c==null?"(unsortiert)":c;v=-t.amt;}
+    sums.set(key,(sums.get(key)||0)+v);
+  }
+  const total=[...sums.values()].reduce((a,b)=>a+b,0);
+  let segs=[...sums.entries()].map(([key,amt])=>({key,amt,pct:total?amt/total*100:0,color:mode==="acc"?PALETTE[Math.max(0,S.accounts.findIndex(a=>a.id===key))%PALETTE.length]:catColor(key)})).sort((a,b)=>b.amt-a.amt);
+  const small=segs.filter(s=>s.pct<3&&s.key!=="(unsortiert)"),big=segs.filter(s=>!(s.pct<3&&s.key!=="(unsortiert)"));
+  let more=[];
+  if(small.length>=2){more=small;const amt=small.reduce((s,x)=>s+x.amt,0);big.push({key:"__more",amt,pct:total?amt/total*100:0,color:catColor("__more"),members:small});segs=big.sort((a,b)=>(a.key==="__more")-(b.key==="__more")||b.amt-a.amt);}
+  return {total,segs,more};
+}
 /* Diagnose je Konto: nur Zahlen, keine Texte oder Namen aus Buchungen */
 function importDiag(S){
   return S.accounts.map(a=>{
@@ -535,19 +631,75 @@ function latestBal(S,accId){
   for(const t of S.tx){ if(t.a!==accId||t.b==null)continue; if(!best||t.d>best.d||(t.d===best.d&&(t.o||0)>=(best.o||0)))best=t; }
   return best?best.b:null;
 }
-function incomeOf(S,ym,cmap){let s=0;for(const t of S.tx)if(t.d.slice(0,7)===ym&&cmap.get(t.h)===INCOME)s+=t.amt;return s;}
+function incomeOf(S,ym,cmap){let s=0;for(const t of S.tx)if(mkey(t)===ym&&cmap.get(t.h)===INCOME)s+=t.amt;return s;}
+/* Abdeckung je Konto: erstes bis letztes Buchungsdatum. Ein Monat ist fuer ein Konto nur "vollstaendig",
+   wenn er komplett in diesem Zeitraum liegt (erster/letzter Monat meist nicht). */
+function coverage(S){
+  const o={};
+  for(const t of S.tx){if(t.man||t.a==="man")continue;const e=o[t.a];if(!e)o[t.a]={first:t.d,last:t.d};else{if(t.d<e.first)e.first=t.d;if(t.d>e.last)e.last=t.d;}}
+  for(const a in o){
+    const e=o[a],cm=[];let m=e.first.slice(0,7);const end=e.last.slice(0,7);
+    while(m<=end){if(e.first<=m+"-01"&&e.last>=m+"-"+pad2(daysIn(m)))cm.push(m);m=shiftYM(m,1);}
+    e.complete=cm;
+  }
+  const un=new Set();for(const a in o)for(const m of o[a].complete)un.add(m);
+  if(un.size)o.man={first:"",last:"",complete:[...un].sort()}; /* Manuell: voll abgedeckt in allen vollstaendigen Monaten */
+  return o;
+}
+function coverageGaps(S,ym,cov){
+  cov=cov||coverage(S);const out=[];
+  for(const a of S.accounts){const e=cov[a.id];if(a.virtual||!e||e.complete.includes(ym))continue;out.push({id:a.id,name:a.name,first:e.first,last:e.last});}
+  return out;
+}
+/* Gehalt je Monat: pro Konto nur vollstaendige Monate (letzte K bis anchor), Summe der Konten-Durchschnitte */
+function incomeAvgComplete(S,cmap,anchor,K){
+  const cov=coverage(S);let tot=0,n=0;
+  for(const a in cov){
+    const ms=cov[a].complete.filter(m=>m<=anchor).slice(-K);if(!ms.length)continue;
+    const set=new Set(ms);let s=0;
+    for(const t of S.tx)if(t.a===a&&set.has(mkey(t))&&cmap.get(t.h)===INCOME)s+=t.amt;
+    if(s>0){tot+=s/ms.length;n=Math.max(n,ms.length);}
+  }
+  return n?{v:tot,n}:null;
+}
 function effIncome(S,ym,cmap,today){
   today=today||todayStr();
   if(S.budget.income>0)return {v:S.budget.income,src:"manuell"};
-  const cur=today.slice(0,7),start=ym===cur?shiftYM(ym,-1):ym; /* laufender Teilmonat zählt nicht in den Durchschnitt */
-  let sum=0,n=0;
-  for(let k=0;k<3;k++){const v=incomeOf(S,shiftYM(start,-k),cmap);if(v>0){sum+=v;n++;}}
-  if(n)return {v:sum/n,src:"aus Buchungen"};
+  const cur=today.slice(0,7),start=ym===cur?shiftYM(ym,-1):ym; /* laufender Teilmonat zaehlt nicht */
+  const ic=incomeAvgComplete(S,cmap,start,3);
+  if(ic)return {v:ic.v,src:"aus Buchungen (Ø "+ic.n+" Monate)"};
+  for(let k=0;k<3;k++){const v=incomeOf(S,shiftYM(start,-k),cmap);if(v>0)return {v,src:"aus Buchungen (Monat unvollständig)"};}
   const v=incomeOf(S,ym,cmap);if(v>0)return {v,src:"aus Buchungen, laufender Monat"};
   if(S.profile&&S.profile.income>0)return {v:S.profile.income,src:"aus deiner Einrichtung"};
   if(S.budget.planIncome>0)return {v:S.budget.planIncome,src:"Plan"};
   return {v:0,src:"fehlt",missing:true};
 }
+/* Ø pro Monat: je Konto nur dessen vollstaendige Monate (letzte N, N=0: alle), Ø = Summe / Anzahl dieser Monate;
+   Konten werden addiert (Betrag pro Monat), Zeilen zeigen die Zahl der Monate (kleinster Wert der beteiligten Konten). */
+function avgReport(S,cmap,N){
+  const cov=coverage(S),rows={},accs=[];
+  let inc=0,incN=0,nMin=0,tradeIn=0;
+  for(const a of S.accounts){
+    const e=cov[a.id];if(!e||!e.complete.length)continue;
+    const ms=N?e.complete.slice(-N):e.complete,set=new Set(ms),n=ms.length;
+    accs.push({id:a.id,name:a.name,n,first:e.first,last:e.last});
+    nMin=nMin?Math.min(nMin,n):n;
+    const sums={};let ai=0;
+    for(const t of S.tx){
+      if(t.a!==a.id||!set.has(mkey(t)))continue;
+      const cat=cmap.get(t.h);if(cat===TRANSFER)continue;
+      if(t.amt>0){ai+=t.amt;if(cat==="Trading")tradeIn+=t.amt/n;}
+      else{const k=cat==null?"(unsortiert)":cat;sums[k]=(sums[k]||0)-t.amt;}
+    }
+    if(ai>0){inc+=ai/n;incN=incN?Math.min(incN,n):n;}
+    for(const k in sums){const r=rows[k]||(rows[k]={cat:k,avg:0,n:n});r.avg+=sums[k]/n;r.n=Math.min(r.n,n);}
+  }
+  const list=Object.values(rows).map(r=>Object.assign(r,{group:r.cat==="(unsortiert)"?"uns":groupOf(S,r.cat)})).sort((a,b)=>b.avg-a.avg);
+  const sum=g=>list.filter(r=>r.group===g).reduce((s,r)=>s+r.avg,0);
+  const fix=sum("fix"),vr=sum("var"),save=sum("save"),uns=sum("uns");
+  return {rows:list,accs,inc,incN,fix,var:vr,save,uns,left:inc-fix-vr-save-uns,nMin,tradeIn};
+}
+
 function refOf(S,it,income){
   const fs=fixedSum(S,it),plan=fs>0?fs:(it.plan>0?it.plan:null),de=it.pct>0&&income>0?income*it.pct/100:null;
   let ref=null,src="",std=false;const m=S.budget.mode;
@@ -575,7 +727,7 @@ function projection(it,ist,ym,today,lastTx){
 function projDay(ym,today,lastTx){let day=+today.slice(8,10);if(ym!==today.slice(0,7))return 0;if(lastTx&&lastTx.slice(0,7)===ym)day=Math.min(day,+lastTx.slice(8,10));return day;}
 /* Vorschlag (nie automatisch): gleicher Haendler, Betrag +-5 %, in mindestens 3 verschiedenen Monaten */
 function detectRecurring(S,cmap){
-  const g=new Map(),skip=new Set((S.profile&&S.profile.skipRec)||[]);
+  const g=new Map(),skip=new Set((S.profile&&S.profile.skipRec)||[]),mi=m=>+m.slice(0,4)*12+ +m.slice(5,7);
   for(const t of S.tx){
     if(t.amt>=0)continue;const cat=cmap.get(t.h);if(cat===TRANSFER||cat===INCOME)continue;
     const k=merchantKey(t);if(!k||skip.has(k))continue;(g.get(k)||g.set(k,[]).get(k)).push(t);
@@ -584,18 +736,24 @@ function detectRecurring(S,cmap){
   for(const [k,arr] of g){
     let best=null;
     for(const a of arr){
-      const base=-a.amt,cl=arr.filter(t=>Math.abs(-t.amt-base)<=base*0.05),months=new Set(cl.map(t=>t.d.slice(0,7)));
-      if(months.size>=3&&(!best||months.size>best.months.size))best={cl,months,base};
+      const base=-a.amt,cl=arr.filter(t=>Math.abs(-t.amt-base)<=base*0.10),months=[...new Set(cl.map(t=>t.d.slice(0,7)))].sort();
+      if(months.length<2||base<5)continue;
+      const idx=months.map(mi),gaps=idx.slice(1).map((v,i)=>v-idx[i]);
+      let interval=0;
+      if(months.length>=3&&months.length/(idx[idx.length-1]-idx[0]+1)>=0.7)interval=1; /* fast jeden Monat */
+      else if(gaps.every(x=>x===gaps[0])&&[3,6,12].includes(gaps[0])&&(months.length>=3||gaps[0]===12))interval=gaps[0];
+      if(!interval)continue;
+      if(!best||months.length>best.months.length)best={cl,months,interval};
     }
-    if(!best||best.base<5)continue;
+    if(!best)continue;
     const nm=norm(k);
     if((S.fixed||[]).some(f=>{const n=norm(f.n);return n&&(n.includes(nm)||nm.includes(n));}))continue;
-    const amts=best.cl.map(t=>-t.amt).sort((a,b)=>a-b),amt=amts[Math.floor(amts.length/2)];
+    const amts=best.cl.map(t=>-t.amt).sort((a,b)=>a-b),occ=amts[Math.floor(amts.length/2)];
     const cc={};for(const t of best.cl){const x=cmap.get(t.h);if(x)cc[x]=(cc[x]||0)+1;}
     const cat=Object.keys(cc).sort((a,b)=>cc[b]-cc[a])[0]||null;
-    out.push({k,name:(best.cl[0].p||best.cl[0].t||k).slice(0,30),amt:Math.round(amt*100)/100,months:best.months.size,cat});
+    out.push({k,name:(best.cl[0].p||best.cl[0].t||k).slice(0,30),amt:Math.round(occ/best.interval*100)/100,occ:Math.round(occ*100)/100,interval:best.interval,months:best.months.length,cat});
   }
-  return out.sort((a,b)=>b.amt-a.amt).slice(0,6);
+  return out.sort((a,b)=>b.amt-a.amt).slice(0,8);
 }
 const lastDate=(S,accId)=>{let m="";for(const t of S.tx)if(t.a===accId&&t.d>m)m=t.d;return m;};
 const GENERIC=new Set(["KARTENZAHLUNG","LASTSCHRIFT","GMBH","MARKT","SAGT","DANKE","ZAHLUNG","UEBERWEISUNG","DAUERAUFTRAG","GIROCARD","DEBIT","ONLINE","PURCHASE","MANDATSREFERENZ","GLAEUBIGER"]);
@@ -603,9 +761,9 @@ const dupTokens=s=>new Set(norm(s).split(" ").filter(w=>w.length>=4&&/^[A-Z]+$/.
 /* Duplikate: exakter Hash (alte Methode, bleibt kompatibel) oder gleiches Datum+Betrag+Konto mit gemeinsamem Wort
    (z. B. dieselbe Buchung aus PDF und CSV). Gleiches Datum+Betrag+Konto aber anderer Text = "maybe" (Rückfrage). */
 function markDups(S,rows,accId){
-  const known=new Set(S.tx.map(t=>t.h));for(const d of S.del)known.add(d);
+  const known=new Set(S.tx.filter(t=>!t.man).map(t=>t.h));for(const d of S.del)known.add(d);
   const soft=new Map();
-  for(const t of S.tx){if(t.a!==accId)continue;const k=t.d+"|"+Math.round(t.amt*100);(soft.get(k)||soft.set(k,[]).get(k)).push(dupTokens((t.p||"")+" "+(t.t||"")));}
+  for(const t of S.tx){if(t.a!==accId||t.man)continue;const k=t.d+"|"+Math.round(t.amt*100);(soft.get(k)||soft.set(k,[]).get(k)).push(dupTokens((t.p||"")+" "+(t.t||"")));}
   for(const r of rows){
     r.dup=false;r.maybe=false;const k=r.d+"|"+Math.round(r.amt*100),arr=soft.get(k);
     if(known.has(r.h)){r.dup=true;if(arr&&arr.length)arr.shift();continue;}
@@ -683,9 +841,11 @@ async function pinVerify(pin,rec){
 }
 
 /* ---------- Zustand, Merge ---------- */
+const MAN_ACC=()=>({id:"man",name:"Manuell",virtual:true,inv:false,map:null,u:0});
 function newState(){
   const S={v:SCHEMA,dev:uid(),cfgTs:0, /* 0: eine frische Installation ueberschreibt beim Sync nie die Konfiguration einer bestehenden */
-    accounts:[["dkb","DKB"],["consors","Consorsbank"],["sparda","Sparda-Bank"],["spk","Sparkasse"],["revolut","Revolut"],["amex","Amex"]].map(([id,name])=>({id,name,inv:id==="amex",map:null,u:0})),
+    recur:[],delw:{},
+    accounts:[["dkb","DKB"],["consors","Consorsbank"],["sparda","Sparda-Bank"],["spk","Sparkasse"],["revolut","Revolut"],["amex","Amex"]].map(([id,name])=>({id,name,inv:id==="amex",map:null,u:0})).concat([MAN_ACC()]),
     tx:[],del:[],cats:DEF_CATS.slice(),rules:expandRules(),budget:neutralBudget(),
     profile:{income:null,setupDone:false,legacy:false,skipRec:[]},fixed:[],
     vault:{pin:null,ov:{},free:[],hist:{}}};
@@ -717,6 +877,12 @@ function migrateState(s){
     if(pristine)s.budget=Object.assign(neutralBudget(),{mode:s.budget.mode||"plan"});
     s.v=3;ch=true;
   }
+  if((s.v||1)<4){ /* v4: additiv, virtuelles Konto Manuell, Dauerposten, Loesch-Zeitstempel */
+    if(!Array.isArray(s.recur))s.recur=[];if(!s.delw||typeof s.delw!=="object")s.delw={};
+    s.v=4;ch=true;
+  }
+  if(!s.accounts.some(a=>a.id==="man")){s.accounts.push(MAN_ACC());ch=true;}
+  if(!Array.isArray(s.recur))s.recur=[];if(!s.delw||typeof s.delw!=="object")s.delw={};
   const n0=s.budget.items.length;ensureItems(s);if(s.budget.items.length!==n0)ch=true;
   return ch;
 }
@@ -741,13 +907,14 @@ function mergeStates(L,R){
   const am=new Map();
   for(const a of [...(L.accounts||[]),...(R.accounts||[])]){const e=am.get(a.id);if(!e||(a.u||0)>(e.u||0))am.set(a.id,a);}
   out.accounts=[...am.values()].filter(a=>!del.has("acc:"+a.id));
+  const dw=Object.assign({},L.delw||{});for(const k in (R.delw||{}))dw[k]=Math.max(dw[k]||0,R.delw[k]);out.delw=dw;
   const ids=new Set(out.accounts.map(a=>a.id));
   const tm=new Map();
-  for(const t of [...(L.tx||[]),...(R.tx||[])]){ if(del.has(t.h))continue; const e=tm.get(t.h); if(!e||(t.u||0)>(e.u||0))tm.set(t.h,t); }
+  for(const t of [...(L.tx||[]),...(R.tx||[])]){ if(del.has(t.h)||(dw[t.h]!==undefined&&dw[t.h]>=(t.u||0)))continue; const e=tm.get(t.h); if(!e||(t.u||0)>(e.u||0))tm.set(t.h,t); }
   out.tx=[...tm.values()].filter(t=>ids.has(t.a));
   const win=(R.cfgTs||0)>(L.cfgTs||0)?R:L;
   out.cfgTs=Math.max(L.cfgTs||0,R.cfgTs||0);
-  out.cats=win.cats;out.rules=win.rules;out.budget=win.budget;out.vault=win.vault;out.profile=win.profile||{income:null,setupDone:true,legacy:true,skipRec:[]};out.fixed=win.fixed||[];
+  out.recur=win.recur||[];out.cats=win.cats;out.rules=win.rules;out.budget=win.budget;out.vault=win.vault;out.profile=win.profile||{income:null,setupDone:true,legacy:true,skipRec:[]};out.fixed=win.fixed||[];
   return out;
 }
 /* true, wenn L Informationen enthält, die R fehlen */
@@ -758,6 +925,7 @@ function hasExtra(L,R){
   const ra=new Map((R.accounts||[]).map(a=>[a.id,a]));
   for(const a of L.accounts||[]){const e=ra.get(a.id);if(!e||(a.u||0)>(e.u||0))return true;}
   const rd=new Set(R.del||[]);for(const x of L.del||[])if(!rd.has(x))return true;
+  for(const k in (L.delw||{}))if(!(R.delw&&R.delw[k]>=L.delw[k]))return true;
   return false;
 }
 
@@ -854,7 +1022,7 @@ const POS_HINT=/gehalt|lohn\b|bezüge|bezuege|arbeitgeber|rente\b|kindergeld|gut
 function detectPdfCtx(text,fname){
   const c={start:null,end:null,year:null};let m;const iso=(d,mo,y)=>y+"-"+pad2(mo)+"-"+pad2(d);
   if((m=/(\d{1,2})\.(\d{1,2})\.(\d{4})\s*(?:bis|-|–)\s*(\d{1,2})\.(\d{1,2})\.(\d{4})/i.exec(text))){c.start=iso(m[1],m[2],m[3]);c.end=iso(m[4],m[5],m[6]);return c;}
-  if((m=/kontoauszug\s*(?:nr\.?\s*)?(\d{1,2})\s*\/\s*(\d{4})/i.exec(text))){c.year=+m[2];return c;}
+  if((m=/kontoauszug\s*(?:nr\.?\s*)?(\d{1,2})\s*\/\s*(\d{4})/i.exec(text))){c.year=+m[2];c.smon=+m[1];return c;}
   if((m=/(?:auszug|abrechnung|statement)[^\n]{0,40}?(20\d{2})/i.exec(text))){c.year=+m[1];return c;}
   if(fname&&(m=/(20\d{2})/.exec(fname))){c.year=+m[1];return c;}
   const all=[...text.matchAll(/(\d{1,2})\.(\d{1,2})\.(20\d{2})/g)].map(x=>iso(x[1],x[2],x[3])).sort();
@@ -887,6 +1055,7 @@ function parsePdfLines(lines,opt){
   const resolveY=mm=>{
     if(year)return year;
     if(ctx.start&&ctx.end){const sy=+ctx.start.slice(0,4),ey=+ctx.end.slice(0,4);return(sy!==ey&&mm>+ctx.end.slice(5,7))?sy:ey;}
+    if(ctx.year&&ctx.smon&&mm-ctx.smon>=6)return ctx.year-1; /* z. B. 30.12. im Auszug 1/2026 */
     return ctx.year||null;
   };
   const flush=()=>{
@@ -932,7 +1101,7 @@ function parsePdfLines(lines,opt){
   return {rows,unrec,needYear,ctx};
 }
 
-if(typeof module!=="undefined"&&module.exports)module.exports={importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
+if(typeof module!=="undefined"&&module.exports)module.exports={MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
 
 /* ===== APP: Speicher, Sync, Oberfläche ===== */
 const $=s=>document.querySelector(s);
@@ -945,10 +1114,10 @@ const MON=["Januar","Februar","März","April","Mai","Juni","Juli","August","Sept
 const mLabel=ym=>MON[+ym.slice(5,7)-1]+" "+ym.slice(0,4);
 const dShort=d=>d.slice(8,10)+"."+d.slice(5,7)+".";
 const hue=n=>parseInt(cyrb53(n),36)%360;
-const dot=n=>`<i class="dot" style="background:hsl(${hue(n)} 55% 52%)"></i>`;
+const dot=n=>`<i class="dot" style="background:${catColor(n)}"></i>`;
 
 let S=null, META={theme:"auto",pass:null}, VER=1, saveT=null, pushT=null;
-const ui={tab:"ov",month:todayStr().slice(0,7),openCat:null,allCats:false,sheet:null,det:{},imp:{acc:null,text:"",stage:"in",msg:""},ruleQ:"",sort:{mode:"out",skip:{},done:{out:0,in:0}}};
+const ui={tab:"ov",month:todayStr().slice(0,7),openCat:null,allCats:false,sheet:null,det:{},imp:{acc:null,text:"",stage:"in",msg:""},ruleQ:"",avgN:3,acc:"all",pie:{mode:"out",more:false},add:null,sort:{mode:"out",skip:{},done:{out:0,in:0}}};
 
 /* ---------- Speicher: IndexedDB mit localStorage-Fallback ---------- */
 let _db=null;
@@ -981,11 +1150,14 @@ function groupTx(list){
 function addRule(k,c){S.rules=S.rules.filter(r=>!(norm(r.k)===norm(k)));S.rules.unshift({k:k.trim(),c});}
 
 /* ---------- Ansichten ---------- */
-const VIEW={ov:vMonth,so:vSort,im:vImport,more:vSettings};
+const VIEW={ov:vMonth,so:vSort,im:vImport,more:vSettings,avg:vAvg};
+const dl2=d=>d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(2,4);
 const unsList=()=>{const cm=cmap();return S.tx.filter(t=>cm.get(t.h)==null);};
 function render(){
   document.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.tab===ui.tab)));
   if(!S)return;
+  if(materializeRecur(S,todayStr())){VER++;save();}
+  const fab=$("#fab");if(fab)fab.hidden=!(ui.tab==="ov"&&!ui.wiz);
   const nU=unsList().length,sb=document.querySelector('.seg [data-tab="so"]');
   if(sb)sb.innerHTML="Sortieren"+(nU?`<i class="bdg" aria-label="${nU} offen">${nU>99?"99+":nU}</i>`:"");
   const demo=hasDemo()?`<div class="demo"><span><b>Demo-Daten</b> aktiv, nur zum Ausprobieren.</span><button class="btn s" data-a="demoDel">Demo löschen</button></div>`:"";
@@ -1002,18 +1174,22 @@ function emptyCard(){
 const HINT=it=>{for(const c of it.cats)if(HINTS[c])return HINTS[c];return "Schau dir die größten Einzelbuchungen an und frage dich, was davon wirklich nötig war.";};
 const AMPW={g:"grün",y:"gelb",r:"rot",n:"ohne Richtwert"};
 function accStatus(ym){
-  const cur=nowYM(),out={warn:[],all:[]};
+  const cur=nowYM(),today=todayStr(),out={warn:[],all:[]},cov=coverage(S);
   for(const a of S.accounts){
-    const ld=lastDate(S,a.id);if(!ld)continue;
-    out.all.push(`${esc(a.name)}: zuletzt importiert bis ${dShort(ld)}${ld.slice(0,4)!==String(new Date().getFullYear())?ld.slice(0,4):""}`);
-    const active=ld.slice(0,7)>=shiftYM(ym,-3);
-    if(active&&ym<=cur&&!S.tx.some(t=>t.a===a.id&&t.d.slice(0,7)===ym))out.warn.push(`${esc(a.name)}: keine Buchungen im ${MON[+ym.slice(5,7)-1]}, Ausgaben evtl. zu niedrig.`);
+    const e=cov[a.id];if(!e||a.virtual)continue;
+    out.all.push(`${esc(a.name)}: Daten vom ${dl2(e.first)} bis ${dl2(e.last)} · ${e.complete.length} vollständige Monate`);
+    if(ym>cur||e.complete.includes(ym))continue;
+    if(ym===cur){ /* laufender Monat ist von Natur aus offen: nur warnen, wenn der Import veraltet ist */
+      if(dayNum(today)-dayNum(e.last)>3)out.warn.push(`Konto ${esc(a.name)} endet am ${dl2(e.last)}, danach fehlen Buchungen – Zahlen unvollständig.`);
+      continue;
+    }
+    out.warn.push(`Konto ${esc(a.name)} deckt diesen Monat nicht ab (Daten ${dl2(e.first)} bis ${dl2(e.last)}) – Zahlen unvollständig.`);
   }
   return out;
 }
 function vMonth(){
   if(!S.tx.length)return emptyCard();
-  const cm=cmap(),ym=ui.month,ag=monthAgg(S,ym,cm),today=todayStr(),cur=ym===today.slice(0,7),dim=daysIn(ym);
+  const cm=cmap(),ym=ui.month,SV=viewS(),ag=monthAgg(SV,ym,cm),today=todayStr(),cur=ym===today.slice(0,7),dim=daysIn(ym);
   const inc=effIncome(S,ym,cm,today),pd=projDay(ym,today,ag.last),canProj=cur&&pd>=8&&pd<dim;
   const noPlan=!S.budget.items.some(it=>it.plan>0)&&!S.fixed.length,neutral=inc.missing&&noPlan;
   const all=S.budget.items.map((it,i)=>{
@@ -1028,12 +1204,17 @@ function vMonth(){
   const spent=ag.fix+ag.var+ag.unsOut,left=ag.inc-ag.exp;
   let projSpent=0;for(const r of all)if(groupOf(S,r.it.cats[0])!=="save")projSpent+=r.pr;projSpent+=canProj?ag.unsOut/pd*dim:ag.unsOut;
   let h=`<p class="lead">Bisher <b>${fmt0(spent)}</b> ausgegeben${canProj?` · Prognose Monatsende <b>${fmt0(projSpent)}</b>`:""} · Einnahmen <b>${fmt0(ag.inc)}</b> · übrig <b class="${left<0?"neg":"pos"}">${sgn0(left).replace("+","")}</b></p>`;
-  const pv=monthAgg(S,shiftYM(ym,-1),cm),subs=[];
+  const pv=monthAgg(SV,shiftYM(ym,-1),cm),subs=[];
   if(!inc.missing)subs.push(`Dein Gehalt: ${fmt0(inc.v)} (${esc(inc.src)})`);
-  if(pv.n)subs.push(`Vormonat: ${fmt0(pv.fix+pv.var+pv.unsOut)} ausgegeben`);
+  if(pv.n&&!coverageGaps(S,shiftYM(ym,-1)).length)subs.push(`Vormonat: ${fmt0(pv.fix+pv.var+pv.unsOut)} ausgegeben`);
   if(cur&&!canProj)subs.push("Prognose erst ab dem 8. des Monats");
   h+=`<p class="muted small">${subs.join(" · ")}</p>`;
+  if(ag.n){const pT=ag.tx.filter(t=>t.amt>0),gh=pT.filter(t=>cm.get(t.h)===INCOME).reduce((s,t)=>s+t.amt,0);
+    h+=`<button class="linkline" data-a="einn">Einnahmen: ${fmt0(ag.inc)} aus ${pT.length} Buchungen (Gehalt: ${fmt0(gh)}) – Tippen für Details</button><button class="linkline" data-a="tab" data-t="avg">Ø pro Monat und Fixkosten ansehen</button>`;}
   if(!ag.n)h+=`<p class="empty">In diesem Monat gibt es keine Buchungen.</p>`;
+  h+=accFilterHtml();
+  {const cp=commonPeriod(S);if(cp&&cp.lastMonth&&ym!==cp.lastMonth)h+=`<button class="linkline" data-a="monthCommon">Zum letzten vollständigen Monat (${mLabel(cp.lastMonth)}, alle Konten)</button>`;}
+  if(ag.n)h+=donutCard(SV,cm,ym);
   /* Gehalt erkennen */
   if(!S.budget.income&&!META.incSkip&&!S.tx.some(t=>cm.get(t.h)===INCOME)){
     const cands=S.tx.filter(t=>t.amt>0&&cm.get(t.h)!==TRANSFER&&cm.get(t.h)!==INCOME).sort((a,b)=>b.amt-a.amt).slice(0,5);
@@ -1042,7 +1223,7 @@ function vMonth(){
   /* Einrichtung */
   if(neutral)h+=`<section class="card warnc"><p class="big">Einrichtung starten</p><p class="muted small">Damit die Ampel für dich passt, brauchen wir dein Einkommen und deine festen Kosten. Dauert eine Minute und lässt sich überspringen. Bis dahin zeigt die App nur deine Ausgaben, ohne Bewertung.</p><button class="btn p w" data-a="wizOpen">Einrichtung starten</button></section>`;
   else if(inc.missing)h+=`<section class="card warnc"><p class="muted">Gib dein Einkommen ein, sonst sind die Vergleichswerte nicht sinnvoll.</p><button class="btn p w" data-a="wizOpen">Einkommen eingeben</button></section>`;
-  if(!S.profile.legacy&&S.profile.setupDone){const rc=detectRecurring(S,cm)[0];if(rc)h+=`<section class="card"><p><b>Wiederkehrende Zahlung erkannt:</b> ${esc(rc.name)} ${fmt0(rc.amt)} monatlich. Als feste Kosten übernehmen?</p><div class="row"><button class="btn s p" data-a="recAdd" data-k="${esc(rc.k)}">Übernehmen</button><button class="btn s" data-a="recNo" data-k="${esc(rc.k)}">Nein</button></div></section>`;}
+  if(!S.profile.legacy&&S.profile.setupDone){const rc=detectRecurring(S,cm)[0];if(rc)h+=`<section class="card"><p><b>Wiederkehrende Zahlung erkannt:</b> ${esc(rc.name)} ${rc.interval>1?fmt(rc.occ)+" alle "+rc.interval+" Monate ("+fmt(rc.amt)+" pro Monat)":fmt0(rc.amt)+" monatlich"}. Als feste Kosten übernehmen?</p><div class="row"><button class="btn s p" data-a="recAdd" data-k="${esc(rc.k)}">Übernehmen</button><button class="btn s" data-a="recNo" data-k="${esc(rc.k)}">Nein</button></div></section>`;}
   /* Alarm */
   const al=all.filter(r=>!r.it.goal&&(r.am==="r"||r.warn)).sort((a,b)=>((b.warn?b.pr:b.ist)-b.rf.ref)-((a.warn?a.pr:a.ist)-a.rf.ref)).slice(0,2);
   if(al.length)h+=`<section class="alarm bad" role="alert"><h2>Achtung</h2>${al.map(r=>`<p><b>${esc(r.it.n)}: ${r.warn?`Prognose ${fmt0(r.pr)} statt ${fmt0(r.rf.ref)}`:`${fmt0(r.ist)} statt ${fmt0(r.rf.ref)} – ${sgn0(r.ist-r.rf.ref)}`}</b><br><span>${esc(HINT(r.it))}</span></p>`).join("")}</section>`;
@@ -1051,7 +1232,7 @@ function vMonth(){
   /* Hinweise: unsortiert, Umbuchungen, Konten */
   const U=unsList(),uOut=U.filter(t=>t.amt<0).reduce((s,t)=>s-t.amt,0),uIn=U.filter(t=>t.amt>0).length;
   const st=accStatus(ym);let nt="";
-  if(U.length)nt+=`<button class="line" data-a="tab" data-t="so"><span class="ln"><b>${U.length} Buchungen unsortiert${uOut?" ("+fmt0(uOut)+")":""}</b><small>${uIn?uIn+" Eingänge prüfen · ":""}Jetzt sortieren</small></span><span aria-hidden="true">›</span></button>`;
+  if(U.length)nt+=`<button class="line" data-a="tab" data-t="so"><span class="ln"><b>${U.length} Buchungen unsortiert${ag.unsOut?" ("+fmt0(ag.unsOut)+" in diesem Monat)":""}</b><small>${uIn?uIn+" Eingänge prüfen · ":""}Jetzt sortieren</small></span><span aria-hidden="true">›</span></button>`;
   if(ag.trans.length)nt+=`<button class="line" data-a="umb"><span class="ln"><b>Umbuchungen ignoriert: ${ag.trans.length} Buchungen, ${fmt0(ag.transSum)}</b><small>Übertrag zwischen eigenen Konten und Kreditkarte bezahlt, zählt nicht. Tippen zum Prüfen.</small></span><span aria-hidden="true">›</span></button>`;
   if(ag.ins.length)nt+=`<button class="line" data-a="incList"><span class="ln"><b>Eingänge prüfen: ${ag.ins.length} Buchungen, ${fmt0(ag.insSum)}</b><small>Sie zählen schon als Einnahmen. Tippe, um dein Gehalt zu wählen.</small></span><span aria-hidden="true">›</span></button>`;
   for(const w of st.warn)nt+=`<div class="line static warnt"><span class="ln"><b>⚠ ${w}</b></span></div>`;
@@ -1086,6 +1267,30 @@ function vMonth(){
   const kn=S.accounts.length;
   return h+`<details class="dt card" data-id="accs" ${ui.det.accs?"open":""}><summary>Konten-Stand</summary><div class="dbody">${st.all.length?st.all.map(x=>`<p class="small">${x}</p>`).join(""):`<p class="small muted">Noch kein Konto importiert.</p>`}</div></details>`;
 }
+/* ---------- Ø pro Monat (nur vollständige Monate je Konto) ---------- */
+function vAvg(){
+  const cm=cmap(),N=ui.avgN,R=avgReport(S,cm,N),few=n=>n<3?` <span class="warnt">wenig Daten</span>`:"";
+  const ab=n=>`<small class="faint">Ø aus ${n} ${n===1?"Monat":"Monaten"}</small>${few(n)}`;
+  let h=`<button class="btn s" data-a="tab" data-t="ov">‹ Zurück zur Monatsansicht</button><h2 class="sec">Ø pro Monat</h2>
+  <p class="muted small">Gerechnet wird pro Kalendermonat und je Konto nur mit vollständigen Monaten (liegt der Monat komplett im Zeitraum, den du importiert hast). Angebrochene Monate am Anfang und Ende zählen nicht.</p>
+  <div class="chips" role="group" aria-label="Zeitraum">${[[3,"Letzte 3"],[6,"Letzte 6"],[12,"Letzte 12"],[0,"Alle vollständigen"]].map(([n,l])=>`<button data-a="avgN" data-n="${n}" aria-pressed="${N===n}">${l}</button>`).join("")}</div>`;
+  if(!R.accs.length)return h+`<div class="card"><p class="big">Noch kein vollständiger Monat.</p><p class="muted">Importiere einen Zeitraum, der mindestens einen ganzen Kalendermonat umfasst (vom 1. bis zum Monatsletzten).</p><button class="btn p w" data-a="tab" data-t="im">Zum Import</button></div>`;
+  const line=(l,v,n,cls)=>`<div class="kv"><span>${l}<br>${ab(n)}</span><b class="num ${cls||""}">${fmt0(v)}</b></div>`;
+  h+=`<section class="card"><h2 class="sec">Pro Monat im Schnitt</h2>${line("Einnahmen pro Monat",R.inc,R.incN||R.nMin,"pos")}${line("Fixkosten pro Monat",R.fix,R.nMin)}${line("Variabel pro Monat",R.var,R.nMin)}${line("Sparen / Anlegen pro Monat",R.save,R.nMin)}${R.uns?line("Unsortiert pro Monat",R.uns,R.nMin):""}<div class="kv tot"><span>Übrig pro Monat</span><b class="num ${R.left<0?"neg":"pos"}">${R.left<0?"−":""}${fmt0(Math.abs(R.left))}</b></div></section>`;
+  const rowHtml=r=>{
+    const it=S.budget.items.find(i=>i.cats.includes(r.cat)),pl=r.group==="fix"&&it?refOf(S,it,0).plan:null;
+    return `<div class="kv"><span>${esc(r.cat==="(unsortiert)"?"Unsortiert":catLabel(r.cat))}<br>${ab(r.n)}${pl>0?` <small class="${Math.abs(pl-r.avg)>Math.max(5,pl*0.1)?"warnt":"faint"}">· Plan ${fmt0(pl)} · real ${fmt0(r.avg)}</small>`:""}</span><b class="num">${fmt0(r.avg)}</b></div>`;
+  };
+  for(const [g,t] of [["fix","Fixkosten pro Monat"],["var","Variable Ausgaben pro Monat"],["save","Sparen / Anlegen pro Monat"]]){
+    const rs=R.rows.filter(r=>r.group===g);if(rs.length)h+=`<section class="card"><h2 class="sec">${t}</h2>${rs.map(rowHtml).join("")}</section>`;
+  }
+  const rc=detectRecurring(S,cm);
+  h+=`<section class="card"><h2 class="sec">Fixkosten automatisch erkannt</h2><p class="muted small">Zahlungen, die fast jeden Monat in ähnlicher Höhe (±10 %) vorkommen, oder regelmäßig alle 3, 6 oder 12 Monate (dann auf den Monat umgelegt). Nur ein Vorschlag, du bestätigst.</p>`+
+    (rc.length?rc.map(r=>`<div class="erow"><span class="rk">${esc(r.name)}<br><small class="faint">${r.interval>1?fmt(r.occ)+" alle "+r.interval+" Monate = "+fmt(r.amt)+" pro Monat":fmt0(r.amt)+" monatlich"} · ${r.months} Monate</small></span><button class="btn s p" data-a="recAdd" data-k="${esc(r.k)}">Übernehmen</button><button class="btn s" data-a="recNo" data-k="${esc(r.k)}" aria-label="Nein, ${esc(r.name)} nicht übernehmen">Nein</button></div>`).join("")+`<div class="kv tot"><span>Erkannt, pro Monat</span><b class="num">${fmt0(rc.reduce((s,r)=>s+r.amt,0))}</b></div>`:`<p class="muted small">Keine wiederkehrenden Zahlungen gefunden oder alle schon übernommen.</p>`)+`</section>`;
+  h+=`<section class="card"><h2 class="sec">Abdeckung je Konto</h2>${R.accs.map(a=>`<div class="kv small"><span>${esc(a.name)}<br><small class="faint">Daten ${dl2(a.first)} bis ${dl2(a.last)}</small></span><b class="num">${a.n} Monate</b></div>`).join("")}</section>`;
+  return h;
+}
+
 /* ---------- Sortieren (geführt) ---------- */
 function sortLists(){
   const U=unsList();
@@ -1114,7 +1319,7 @@ function vSort(){
   return h;
 }
 /* ---------- Bottom-Sheets ---------- */
-function txRow(t){return `<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${esc((t.t||t.p).slice(0,60))}</span><span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span></button>`;}
+function txRow(t){return `<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${t.man?(t.rec?"⟳ ":"✎ "):""}${esc((t.man?(t.p||t.t):(t.t||t.p)).slice(0,50))} <small class="faint">· ${esc(accName(t.a))}</small></span><span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span></button>`;}
 function renderSheet(){
   const el=$("#sheet"),sh=ui.sheet;
   const hide=()=>{ui.sheet=null;el.innerHTML="";el.classList.remove("on");};
@@ -1124,19 +1329,39 @@ function renderSheet(){
     inner=`<p class="big">Import fertig</p><p><b>${sh.n}</b> neu${sh.dup?` · ${sh.dup} Duplikate übersprungen`:""} · <b>${sh.uns}</b> noch zu sortieren</p>
     <div class="row">${sh.uns?`<button class="btn p" data-a="impGo" data-t="so">Als Nächstes: Sortieren</button><button class="btn" data-a="impGo" data-t="ov">Zur Monatsansicht</button>`:`<button class="btn p" data-a="impGo" data-t="ov">Zur Monatsansicht</button>`}</div>`;
   }else if(sh.t==="catdet"){
-    const it=S.budget.items[sh.i],ag=monthAgg(S,ui.month,cm);
+    const it=S.budget.items[sh.i],ag=monthAgg(viewS(),ui.month,cm);
     const tx=it?it.cats.flatMap(c=>ag.byCat[c]?ag.byCat[c].tx:[]):[];
     inner=`<p class="big">${esc(it?it.n:"")}</p><p class="muted small">${mLabel(ui.month)} · ${tx.length} Buchungen${it&&it.note?" · "+esc(it.note):""}</p>`+
       groupTx(tx).map(g=>`<div class="gh"><b>${esc(g.name)}</b><span class="num">${fmt(g.sum)}</span></div>${g.tx.sort((a,b)=>a.d<b.d?1:-1).map(txRow).join("")}`).join("")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
+  }else if(sh.t==="add"){
+    if(!ui.add)ui.add=newAdd();inner=addHtml();
+  }else if(sh.t==="seg"){
+    const SVv=viewS(),r=segTx(SVv,ui.month,cm,sh.mode,sh.key);
+    if(!r.seg){hide();return;}
+    inner=`<p class="big"><i class="dot" style="background:${r.seg.color}"></i>${esc(segLabel(sh.mode,sh.key))}</p><p class="muted small">${fmt0(r.seg.amt)} · ${pctTxt(r.seg.pct)} von ${fmt0(r.D.total)} · ${mLabel(ui.month)}</p>${r.list.map(txRow).join("")}<button class="btn w" data-a="sheetClose">Schließen</button>`;
+  }else if(sh.t==="einn"){
+    const ag=monthAgg(viewS(),ui.month,cm),pos=ag.tx.filter(t=>t.amt>0).sort((a,b)=>b.amt-a.amt),sum=pos.reduce((s,t)=>s+t.amt,0);
+    const ex=ag.trans.filter(t=>t.amt>0).sort((a,b)=>b.amt-a.amt),bd=boundaryIncome(S,ui.month,cm);
+    const shifted=S.tx.filter(t=>t.mo===ui.month&&t.d.slice(0,7)!==ui.month&&t.amt>0);
+    const byA={};for(const t of pos)byA[t.a]=(byA[t.a]||0)+t.amt;
+    const cn=t=>cm.get(t.h);
+    inner=`<p class="big">Einnahmen ${mLabel(ui.month)}: ${fmt(sum)}</p><p class="muted small">Alle ${pos.length} Buchungen, die in dieser Summe stehen. Jeder Eingang zählt, außer Umbuchungen.</p>`+
+      (pos.length?pos.map(t=>`<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${t.man?(t.rec?"⟳ ":"✎ "):""}${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,26))} <small class="faint">· ${esc(cn(t)==null?"unsortiert":catLabel(cn(t)))}${t.mo&&t.mo!==t.d.slice(0,7)?" · gebucht "+dShort(t.d):""}</small></span><span class="num pos">${fmt(t.amt)}</span></button>`).join(""):`<p class="muted">Keine Eingänge in diesem Monat.</p>`)+
+      `<div class="kv tot"><span>Summe</span><b class="num pos">${fmt(sum)}</b></div>`+
+      `<h3 class="sec">Nach Konto</h3>`+S.accounts.filter(a=>S.tx.some(t=>t.a===a.id)).map(a=>`<div class="kv small"><span>${esc(a.name)}</span><b class="num">${byA[a.id]?fmt0(byA[a.id]):"keine Eingänge"}</b></div>`).join("")+
+      `<h3 class="sec">Nicht mitgezählt (${ex.length})</h3>`+
+      (ex.length?ex.map(t=>`<div class="erow"><span class="rk">${dShort(t.d)} · ${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,24))}<br><small class="warnt">${isCardPay(t)?"Kreditkarte bezahlt":"Umbuchung zwischen eigenen Konten"}</small></span><b class="num">${fmt(t.amt)}</b><button class="btn s" data-a="cntInc" data-h="${esc(t.h)}">Doch als Einnahme zählen</button></div>`).join(""):`<p class="muted small">Keine positiven Buchungen ausgeschlossen. (Beim Import als Duplikat übersprungene Buchungen werden nicht gespeichert.)</p>`)+
+      ((bd.length||shifted.length)?`<h3 class="sec">Gehalt zum Monatswechsel</h3><p class="muted small">Diese Gehälter wurden kurz vor Monatsende oder zu Monatsbeginn gebucht und stehen deshalb im Nachbarmonat.</p>`+bd.map(t=>`<div class="erow"><span class="rk">${dShort(t.d)} · ${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,24))}</span><b class="num">${fmt(t.amt)}</b><button class="btn s" data-a="moHere" data-h="${esc(t.h)}">In ${MON[+ui.month.slice(5,7)-1]} zählen</button></div>`).join("")+shifted.map(t=>`<div class="erow"><span class="rk">${dShort(t.d)} · ${esc((t.p||t.t).slice(0,24))} (hierher verschoben)</span><b class="num">${fmt(t.amt)}</b><button class="btn s" data-a="moReset" data-h="${esc(t.h)}">Zurück</button></div>`).join(""):"")+
+      `<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else if(sh.t==="inc"){
-    const ag=monthAgg(S,ui.month,cm),list=ag.ins.slice().sort((a,b)=>b.amt-a.amt);
+    const ag=monthAgg(viewS(),ui.month,cm),list=ag.ins.slice().sort((a,b)=>b.amt-a.amt);
     if(!list.length){hide();return;}
     inner=`<p class="big">Eingänge prüfen</p><p class="muted small">${mLabel(ui.month)}: Diese Eingänge zählen schon als Einnahmen. Tippe auf dein Gehalt, dann merkt sich die App die Regel und kennt dein Einkommen.</p>`+
       list.map(t=>`<div class="erow"><button class="line" data-a="incPick" data-h="${esc(t.h)}" aria-label="Das ist mein Gehalt: ${esc((t.p||t.t).slice(0,30))}"><span class="ln"><b>${esc((t.p||t.t).slice(0,34))}</b><small>${dShort(t.d)} · ${esc(accName(t.a))} · Das ist mein Gehalt</small></span><span class="num pos">${fmt(t.amt)}</span></button><button class="btn s" data-a="tx" data-h="${esc(t.h)}" aria-label="Details">…</button></div>`).join("")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else if(sh.t==="umb"){
-    const ag=monthAgg(S,ui.month,cm);
+    const ag=monthAgg(viewS(),ui.month,cm);
     inner=`<p class="big">Umbuchungen (zählen nicht)</p><p class="muted small">${mLabel(ui.month)}: Übertrag zwischen eigenen Konten und Kreditkartenzahlungen. Sie zählen weder als Ausgabe noch als Einnahme, damit nichts doppelt gezählt wird. Tippe auf eine Buchung, um sie zurückzuholen.</p>`+
       ag.trans.sort((a,b)=>a.d<b.d?1:-1).map(t=>`<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${isCardPay(t)?"Kreditkarte bezahlt · ":"Umbuchung · "}${esc(accName(t.a))} · ${esc((t.t||t.p).slice(0,40))}</span><span class="num">${fmt(t.amt)}</span></button>`).join("")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
@@ -1147,6 +1372,7 @@ function renderSheet(){
     inner=`<p class="big">${esc((t.p||t.t||"").slice(0,50))}</p>
    <p class="muted small">${txs.length>1?txs.length+" Buchungen · Summe "+fmt(txs.reduce((s,x)=>s+x.amt,0)):dShort(t.d)+" · "+fmt(t.amt)+" · "+esc(accName(t.a))}<br>${esc((t.t||"").slice(0,120))}</p>
    ${cur===TRANSFER?`<p class="status">${isCardPay(t)?"Kreditkarte bezahlt: zählt nicht als Ausgabe, die Einkäufe stehen auf der Kreditkarte. So wird nichts doppelt gezählt.":"Umbuchung zwischen eigenen Konten: zählt weder als Ausgabe noch als Einnahme."}</p><button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Als normale Buchung behandeln</button>`:(t.nt?`<button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Wieder automatisch als Umbuchung erkennen</button>`:"")}
+   ${t.man?`<div class="row"><button class="btn s p" data-a="${t.rec?"recEdit":"manEdit"}" data-h="${esc(t.h)}" data-id="${esc(t.rec||"")}">${t.rec?"Dauerposten bearbeiten":"✎ Bearbeiten"}</button></div>`:""}
    <div class="cgrid">${S.cats.map(c=>`<button class="${c===cur?"on":""}" data-a="setcat" data-c="${esc(c)}">${dot(c)}${esc(catLabel(c))}</button>`).join("")}</div>
    <label class="chk"><input type="checkbox" id="alw" ${sh.always===false?"":"checked"}> Für diesen Händler immer</label>
    <input id="alwk" value="${esc(kw)}" aria-label="Schlüsselwort für die Regel">
@@ -1158,10 +1384,10 @@ function renderSheet(){
 
 function vImport(){
   const I=ui.imp;if(!I.acc||!S.accounts.some(a=>a.id===I.acc))I.acc=S.accounts[0]&&S.accounts[0].id;
-  let h=`<h2 class="sec">Konto wählen</h2><div class="chips wrapc">${S.accounts.map(a=>`<button data-a="impAcc" data-id="${esc(a.id)}" aria-pressed="${a.id===I.acc}">${esc(a.name)}</button>`).join("")}</div>`;
+  let h=`<h2 class="sec">Konto wählen</h2><div class="chips wrapc">${S.accounts.filter(a=>!a.virtual).map(a=>`<button data-a="impAcc" data-id="${esc(a.id)}" aria-pressed="${a.id===I.acc}">${esc(a.name)}</button>`).join("")}</div>`;
   {const ld=lastDate(S,I.acc);h+=`<p class="muted small">${ld?"Zuletzt importiert bis "+dShort(ld)+ld.slice(0,4)+".":"Für dieses Konto gibt es noch keine Buchungen."}</p>`;}
   if(I.stage==="in"){
-    h+=`<div class="card"><label class="btn p w" for="csvf" tabindex="0" id="csvl">CSV- oder PDF-Datei wählen</label><input type="file" id="csvf" accept=".csv,.txt,.pdf,application/pdf,text/csv,text/plain" hidden>
+    h+=guideHtml()+`<div class="card"><label class="btn p w" for="csvf" tabindex="0" id="csvl">CSV- oder PDF-Datei wählen</label><input type="file" id="csvf" accept=".csv,.txt,.pdf,application/pdf,text/csv,text/plain" hidden>
     <p class="muted small cen">Datei auch per Drag &amp; Drop oder Einfügen möglich. PDFs werden nur lokal im Browser gelesen.</p>
     <p class="muted small cen">oder Text einfügen (CSV oder aus der PDF kopierter Text)</p><textarea id="csvt" rows="5" placeholder="CSV- oder PDF-Text hier einfügen" aria-label="CSV- oder PDF-Text">${esc(I.text)}</textarea>
     <button class="btn w" data-a="impText">Text einlesen</button>${I.busy?`<p class="status" role="status">${esc(I.busy)}</p>`:""}${I.msg?`<p class="err" role="alert">${esc(I.msg)}</p>`:""}</div>
@@ -1180,13 +1406,13 @@ function vImport(){
   }else{
     const nw=impNew(I),nd=I.rows.filter(r=>r.dup).length,nm=I.rows.filter(r=>r.maybe).length;
     h+=`<div class="card"><p class="big">Vorschau: ${esc(accName(I.acc))}</p>
-    <div class="kv"><span>Neu</span><b class="num">${nw.length}</b></div><div class="kv"><span>Duplikate (übersprungen)</span><b class="num">${nd}</b></div>${nm?`<div class="kv"><span>Mögliche Duplikate (gleiches Datum, Betrag, Konto, anderer Text)</span><b class="num">${nm}</b></div><label class="chk"><input type="checkbox" data-ch="takeMaybe" ${I.takeMaybe?"checked":""}> Mögliche Duplikate trotzdem übernehmen</label>`:""}<div class="kv"><span>Nicht lesbare Zeilen</span><b class="num">${I.skipped}</b></div>
+    <div class="kv"><span>Neu</span><b class="num">${nw.length}</b></div><div class="kv"><span>Duplikate (übersprungen)</span><b class="num">${nd}</b></div>${nm?`<div class="kv"><span>Mögliche Duplikate (gleiches Datum, Betrag, Konto, anderer Text)</span><b class="num">${nm}</b></div><label class="chk"><input type="checkbox" data-ch="takeMaybe" ${I.takeMaybe?"checked":""}> Mögliche Duplikate trotzdem übernehmen (Eingänge werden immer übernommen)</label>`:""}<div class="kv"><span>Nicht lesbare Zeilen</span><b class="num">${I.skipped}</b></div>
     <div class="kv"><span>Summe neu</span><b class="num">${fmt(nw.reduce((s,r)=>s+r.amt,0))}</b></div>
     <div class="kv"><span>davon Eingänge (+)</span><b class="num pos">${nw.filter(r=>r.amt>0).length} · ${fmt0(nw.filter(r=>r.amt>0).reduce((s,r)=>s+r.amt,0))}</b></div><div class="kv"><span>davon Ausgaben (−)</span><b class="num">${nw.filter(r=>r.amt<0).length} · ${fmt0(-nw.filter(r=>r.amt<0).reduce((s,r)=>s+r.amt,0))}</b></div>
     ${nw.length&&!nw.some(r=>r.amt>0)?`<p class="err" role="alert">Keine Eingänge in dieser Datei. Stimmen die Vorzeichen? Dann unten "Vorzeichen umkehren" prüfen.</p>`:""}
     <label class="chk"><input type="checkbox" data-ch="inv" ${I.inv?"checked":""}> Vorzeichen umkehren (z. B. Amex: Ausgaben positiv)</label>
     ${I.src==="pdf"?`<p class="muted small">Quelle: PDF-Text, heuristisch erkannt. Bitte Vorschau prüfen${I.guess?", bei "+I.guess+" Buchungen wurde das Vorzeichen geschätzt (der Haken unten kehrt alle um)":""}. CSV ist verlässlicher.</p>`:`<p class="muted small">Trenner „${esc(I.a.delim==="\t"?"Tab":I.a.delim)}“ · Spalten: Datum ${I.a.cols.date+1}${I.a.cols.amount!=null?", Betrag "+(I.a.cols.amount+1):""}</p>`}
-    ${I.rows.slice(0,5).map(r=>`<div class="tl static"><span class="td">${dShort(r.d)}</span><span class="tt">${esc((r.p+" "+r.t).trim().slice(0,50))}${r.dup?" (Duplikat)":r.maybe?(I.takeMaybe?" (mögliches Duplikat, wird übernommen)":" (mögliches Duplikat, wird übersprungen)"):""}</span><span class="num ${r.amt>0?"pos":""}">${fmt(r.amt)}</span></div>`).join("")}
+    ${I.rows.slice(0,5).map(r=>`<div class="tl static"><span class="td">${dShort(r.d)}</span><span class="tt">${esc((r.p+" "+r.t).trim().slice(0,50))}${r.dup?" (Duplikat)":r.maybe?(I.takeMaybe||r.amt>0?" (mögliches Duplikat, wird übernommen)":" (mögliches Duplikat, wird übersprungen)"):""}</span><span class="num ${r.amt>0?"pos":""}">${fmt(r.amt)}</span></div>`).join("")}
     ${I.rows.length>5?`<p class="muted small">… und ${I.rows.length-5} weitere</p>`:""}
     ${I.src==="pdf"&&I.rows.some(r=>r.guess)?`<h3 class="sec">Vorzeichen unsicher (${I.rows.filter(r=>r.guess).length})</h3><p class="muted small">Bei diesen Zeilen war nicht eindeutig, ob es ein Eingang oder eine Ausgabe ist. Standard: Ausgabe, außer bei Wörtern wie Gehalt oder Gutschrift. Tippe auf ↔, um eine Zeile umzudrehen.</p>${I.rows.map((r,i)=>({r,i})).filter(x=>x.r.guess).slice(0,60).map(({r,i})=>`<div class="tl static"><span class="td">${dShort(r.d)}</span><span class="tt">${esc((r.p+" "+r.t).trim().slice(0,40))}</span><span class="num ${r.amt>0?"pos":""}">${fmt(r.amt)}</span><button class="btn s" data-a="impFlip" data-i="${i}" aria-label="Vorzeichen umdrehen">↔</button></div>`).join("")}<button class="btn w" data-a="impFlipAll">Alle unsicheren umdrehen</button>`:""}
     ${I.unrec&&I.unrec.length?`<details class="dt" data-id="unrec"><summary>Nicht erkannt (${I.unrec.length})</summary><div class="dbody"><p class="muted small">Diese Zeilen wurden keiner Buchung zugeordnet. Fehlt etwas, bitte per CSV importieren oder manuell prüfen.</p>${I.unrec.slice(0,40).map(u=>`<div class="tl static"><span class="tt" style="white-space:normal">${esc(u.slice(0,160))}</span></div>`).join("")}</div></details>`:""}</div>
@@ -1198,17 +1424,20 @@ function vImport(){
 function vSettings(){
   const D=(id,title,body)=>`<details class="card dt" data-id="${id}" ${ui.det[id]?"open":""}><summary>${title}</summary><div class="dbody">${body}</div></details>`;
   const catOpts=sel=>S.cats.map(c=>`<option value="${esc(c)}" ${c===sel?"selected":""}>${esc(catLabel(c))}</option>`).join("");
-  let h=`<h2 class="sec">Einstellungen</h2>`;
+  let h=`<h2 class="sec">Einstellungen</h2><button class="btn w" data-a="tab" data-t="avg">Ø pro Monat und Fixkosten</button>`;
   {const rc=detectRecurring(S,cmap()),fsum=S.fixed.reduce((s,f)=>s+(+f.amt||0),0);
   h+=D("fixed","Feste Kosten ("+S.fixed.length+(fsum?", "+fmt0(fsum):"")+")",`<p class="muted small">Jeder Posten wird zum Plan-Wert seiner Kategorie (bei gleicher Kategorie summiert) und gilt als Fixposten, also ohne Hochrechnung.</p>`+
     S.fixed.map(f=>`<div class="fxr"><input class="nm" data-ch="fxName" data-id="${esc(f.id)}" value="${esc(f.n)}" aria-label="Name"><input inputmode="decimal" data-ch="fxAmt" data-id="${esc(f.id)}" value="${f.amt}" aria-label="Betrag in Euro"><select data-ch="fxCat" data-id="${esc(f.id)}" aria-label="Kategorie">${fxCats().map(x=>`<option value="${esc(x)}" ${x===f.cat?"selected":""}>${esc(x)}</option>`).join("")}</select><button class="btn s" data-a="fxDel" data-id="${esc(f.id)}" aria-label="${esc(f.n)} löschen">×</button></div>`).join("")+
     `<div class="fxr"><input class="nm" id="fxn" placeholder="Neuer Posten, z. B. Strom" aria-label="Neuer Posten"><input id="fxa" inputmode="decimal" placeholder="Betrag €" aria-label="Betrag"><select id="fxc" aria-label="Kategorie">${fxCats().map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("")}</select><button class="btn s p" data-a="fxAdd">+</button></div>`+
-    (rc.length?`<h3 class="sec">Wiederkehrende Zahlungen erkannt</h3><p class="muted small">Nur ein Vorschlag, nichts wird automatisch übernommen.</p>`+rc.map(r=>`<div class="erow"><span class="rk">${esc(r.name)} · ${fmt0(r.amt)} monatlich (${r.months} Monate)</span><button class="btn s p" data-a="recAdd" data-k="${esc(r.k)}">Übernehmen</button><button class="btn s" data-a="recNo" data-k="${esc(r.k)}" aria-label="Nein, ${esc(r.name)} nicht übernehmen">Nein</button></div>`).join(""):""));
+    (rc.length?`<h3 class="sec">Wiederkehrende Zahlungen erkannt</h3><p class="muted small">Nur ein Vorschlag, nichts wird automatisch übernommen.</p>`+rc.map(r=>`<div class="erow"><span class="rk">${esc(r.name)} · ${r.interval>1?fmt(r.occ)+" alle "+r.interval+" Monate = "+fmt(r.amt)+" pro Monat":fmt0(r.amt)+" monatlich"} (${r.months} Monate)</span><button class="btn s p" data-a="recAdd" data-k="${esc(r.k)}">Übernehmen</button><button class="btn s" data-a="recNo" data-k="${esc(r.k)}" aria-label="Nein, ${esc(r.name)} nicht übernehmen">Nein</button></div>`).join(""):""));
   h+=D("setup","Einrichtung",`<p class="muted small">Einkommen, feste Kosten und Limits in drei kurzen Schritten festlegen oder jederzeit wiederholen. Bereits vorhandene Werte werden vorausgefüllt und nur geändert, wenn du den Schritt mit "Weiter" bestätigst.</p><button class="btn p w" data-a="wizOpen">Einrichtung ${S.profile.setupDone?"wiederholen":"starten"}</button>`);}
   {const dg=importDiag(S),dl=d=>d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(2,4);
   h+=D("diag","Import prüfen",`<p class="muted small">Zahlen pro Konto, ohne Texte aus den Buchungen. Fehlen Eingänge oder Ausgaben, stimmen vermutlich die Vorzeichen: Konto löschen, neu importieren und dabei "Vorzeichen umkehren" prüfen.</p>`+
-    (dg.length?dg.map(x=>`<div class="diag"><b>${esc(x.name)}</b><span>${x.n} Buchungen · ${dl(x.min)} bis ${dl(x.max)}</span><span><b class="pos">+${fmt0(x.pos)}</b> (${x.np} Eingänge) · <b>−${fmt0(-x.neg)}</b> (${x.nn} Ausgaben)</span>${x.np===0?`<span class="warnt">⚠ Keine Eingänge: Vorzeichen prüfen</span>`:x.nn===0?`<span class="warnt">⚠ Keine Ausgaben: Vorzeichen prüfen</span>`:""}<label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(x.id)}" ${x.inv?"checked":""}> Vorzeichen beim nächsten Import umkehren</label></div>`).join(""):`<p class="muted small">Noch keine Buchungen.</p>`));}
-  h+=D("acc","Konten",S.accounts.map(a=>`<div class="erow"><input data-ch="accName" data-id="${esc(a.id)}" value="${esc(a.name)}" aria-label="Kontoname"><label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(a.id)}" ${a.inv?"checked":""}> Vorz. umkehren</label><button class="btn s" data-a="accDel" data-id="${esc(a.id)}" aria-label="Konto ${esc(a.name)} löschen">Löschen</button></div>`).join("")+
+    (dg.length?dg.map(x=>`<div class="diag"><b>${esc(x.name)}</b><span>${x.n} Buchungen · ${dl(x.min)} bis ${dl(x.max)}</span><span>Saldo der Buchungen: <b>${fmt0(x.pos+x.neg)}</b> · <b class="pos">+${fmt0(x.pos)}</b> (${x.np} Eingänge) · <b>−${fmt0(-x.neg)}</b> (${x.nn} Ausgaben)</span>${x.np===0?`<span class="warnt">⚠ Keine Eingänge: Vorzeichen prüfen</span>`:x.nn===0?`<span class="warnt">⚠ Keine Ausgaben: Vorzeichen prüfen</span>`:""}<label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(x.id)}" ${x.inv?"checked":""}> Vorzeichen beim nächsten Import umkehren</label></div>`).join(""):`<p class="muted small">Noch keine Buchungen.</p>`));}
+  h+=D("recur","Dauerposten ("+S.recur.length+")",`<p class="muted small">Dauerposten rechnen sich ab dem Startdatum in jedem Monat automatisch mit, bis zum Enddatum. Neue legst du mit dem Plus in der Monatsansicht an (Haken "Jeden Monat wiederholen").</p>`+
+    (S.recur.length?S.recur.map(r=>`<div class="erow"><span class="rk">⟳ ${esc(r.n)}<br><small class="faint">${fmt(r.amt)} · ${esc(catLabel(r.cat))} · ab ${dl2(r.start)}${r.end?" bis "+dl2(r.end):""}</small></span><button class="btn s" data-a="recEdit" data-id="${esc(r.id)}">Bearbeiten</button><button class="btn s dang" data-a="recDel" data-id="${esc(r.id)}" aria-label="${esc(r.n)} löschen">×</button></div>`).join(""):`<p class="muted small">Noch keine Dauerposten.</p>`)+`<button class="btn w" data-a="addOpen">Neue Buchung oder Dauerposten</button>`);
+  h+=D("reset","Neu aufsetzen",`<p class="muted small">Löscht alle <b>importierten</b> Buchungen (${S.tx.filter(t=>!t.man).length}). Konten, Kategorien, Regeln, Plan, feste Kosten, Profil, Tresor, manuelle Buchungen und Dauerposten bleiben. Danach alle Konten für denselben Zeitraum neu laden.</p><button class="btn w dang" data-a="wipeTx">Nur Buchungen löschen (Einstellungen behalten)</button>`);
+  h+=D("acc","Konten",S.accounts.filter(a=>!a.virtual).map(a=>`<div class="erow"><input data-ch="accName" data-id="${esc(a.id)}" value="${esc(a.name)}" aria-label="Kontoname"><label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(a.id)}" ${a.inv?"checked":""}> Vorz. umkehren</label><button class="btn s" data-a="accDel" data-id="${esc(a.id)}" aria-label="Konto ${esc(a.name)} löschen">Löschen</button></div>`).join("")+
     `<div class="erow"><input id="newAcc" placeholder="Neues Konto" aria-label="Neues Konto"><button class="btn s p" data-a="accAdd">Hinzufügen</button></div>`);
   h+=D("cat","Kategorien",S.cats.map((c,i)=>{const fixed=c===INCOME||c===TRANSFER;return `<div class="erow"><input data-ch="catName" data-i="${i}" value="${esc(fixed?catLabel(c):c)}" ${fixed?"disabled":""} aria-label="Kategorie"><button class="btn s" data-a="catDel" data-i="${i}" ${fixed?"disabled":""} aria-label="Kategorie ${esc(c)} löschen">Löschen</button></div>`;}).join("")+
     `<div class="erow"><input id="newCat" placeholder="Neue Kategorie" aria-label="Neue Kategorie"><button class="btn s p" data-a="catAdd">Hinzufügen</button></div>`);
@@ -1240,12 +1469,12 @@ function vSettings(){
     (sy?`<button class="btn w" data-a="syNow">Jetzt synchronisieren</button><button class="btn w" data-a="syOff">Sync trennen</button>`:
     `<label class="fld">Sync-Passphrase<input type="password" id="syPass" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
      <button class="btn p w" data-a="syNew">Sync einrichten</button><button class="btn w" data-a="syJoin">Mit bestehender Passphrase verbinden</button>`));
-  h+=`<p class="muted small cen">Finanzplaner v4 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
+  h+=`<p class="muted small cen">Finanzplaner v6 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
   return h;
 }
 
 /* ---------- Import-Ablauf ---------- */
-const impNew=I=>I.rows.filter(r=>!r.dup&&(!r.maybe||I.takeMaybe));
+const impNew=I=>takeRows(I.rows,I.takeMaybe);
 function impBuild(a){
   const I=ui.imp,acc=S.accounts.find(x=>x.id===I.acc),inv=!!acc.inv;
   I.a=a;I.inv=inv;
@@ -1321,7 +1550,7 @@ function impLoad(text){
 }
 function impCommit(){
   const I=ui.imp,nw=impNew(I),dup=I.rows.length-nw.length;
-  mutate(()=>{for(const r of nw)S.tx.push({h:r.h,a:I.acc,d:r.d,amt:r.amt,p:r.p,t:r.t,b:r.b,o:r.o,u:0});
+  mutate(()=>{for(const r of nw)S.tx.push({h:r.h,a:I.acc,d:r.d,amt:r.amt,p:r.p,t:r.t,b:r.b,o:r.o,u:Date.now()});
     ui.month=lastDataMonth()||nowYM();
     I.stage="in";I.rows=[];I.msg="";});
   const hs=new Set(nw.map(r=>r.h)),cm=cmap(),uns=S.tx.filter(t=>hs.has(t.h)&&cm.get(t.h)==null).length;
@@ -1330,6 +1559,11 @@ function impCommit(){
 
 /* ---------- Aktionen (Klicks) ---------- */
 const ACT={
+  avgN:el=>{ui.avgN=+el.dataset.n;render();},
+  einn:()=>{ui.sheet={t:"einn"};render();},
+  cntInc:el=>{const t=S.tx.find(x=>x.h===el.dataset.h);if(!t)return;mutate(()=>{t.c=INCOME;t.nt=1;t.u=Date.now();});toast("Zählt jetzt als Einnahme");},
+  moHere:el=>{const t=S.tx.find(x=>x.h===el.dataset.h);if(!t)return;mutate(()=>{t.mo=ui.month;t.u=Date.now();});toast("Zählt jetzt im "+MON[+ui.month.slice(5,7)-1]);},
+  moReset:el=>{const t=S.tx.find(x=>x.h===el.dataset.h);if(!t)return;mutate(()=>{t.mo=undefined;t.u=Date.now();});toast("Zählt wieder im Buchungsmonat");},
   impFlip:el=>{const I=ui.imp,i=+el.dataset.i;if(I.flips.has(i))I.flips.delete(i);else I.flips.add(i);impBuildPdf();},
   impFlipAll:()=>{const I=ui.imp;I.rows.forEach((r,i)=>{if(r.guess){if(I.flips.has(i))I.flips.delete(i);else I.flips.add(i);}});impBuildPdf();},
   diag:()=>{ui.sheet=null;ui.tab="more";ui.det.diag=true;render();window.scrollTo(0,0);},
@@ -1511,7 +1745,7 @@ const WACT={
   recAdd:el=>{
     const r=detectRecurring(S,cmap()).find(x=>x.k===el.dataset.k);if(!r)return;
     const cat=r.cat&&r.cat!==INCOME&&r.cat!==TRANSFER?r.cat:"Sonstiges";
-    mutate(()=>{S.fixed.push({id:uid(),n:r.name,amt:r.amt,cat});ui.det.fixed=true;},true);toast("Als feste Kosten übernommen");
+    mutate(()=>{S.fixed.push({id:uid(),n:r.interval>1?r.name+" (alle "+r.interval+" Monate)":r.name,amt:r.amt,cat});ui.det.fixed=true;},true);toast("Als feste Kosten übernommen");
   },
   recNo:el=>mutate(()=>{S.profile.skipRec.push(el.dataset.k);},true),
   fixedOpen:()=>{ui.tab="more";ui.det.fixed=true;render();window.scrollTo(0,0);}
@@ -1523,6 +1757,124 @@ const WCH={
   profInc:el=>{const v=parseNum(el.value,true);mutate(()=>{S.profile.income=v>0?v:null;},true);}
 };
 Object.assign(ACT,WACT);Object.assign(CH,WCH);
+
+/* ---------- v6: Kontofilter, Kreisdiagramm, manuelle Buchungen, Import-Leitfaden ---------- */
+const viewS=()=>ui.acc==="all"?S:Object.assign({},S,{tx:S.tx.filter(t=>t.a===ui.acc)});
+function accFilterHtml(){
+  const accs=S.accounts.filter(a=>S.tx.some(t=>t.a===a.id));
+  if(accs.length<2)return "";
+  if(ui.acc!=="all"&&!accs.some(a=>a.id===ui.acc))ui.acc="all";
+  return `<div class="chips" role="group" aria-label="Konto filtern"><button data-a="accF" data-id="all" aria-pressed="${ui.acc==="all"}">Alle Konten</button>${accs.map(a=>`<button data-a="accF" data-id="${esc(a.id)}" aria-pressed="${ui.acc===a.id}">${esc(a.name)}</button>`).join("")}</div>`+
+    (ui.acc!=="all"?`<p class="muted small">Nur ${esc(accName(ui.acc))}. Umbuchungen werden weiter über alle Konten erkannt.</p>`:"");
+}
+const segLabel=(mode,key)=>key==="(unsortiert)"?"Unsortiert":key==="__more"?"Weitere":mode==="acc"?accName(key):catLabel(key);
+const pctTxt=p=>(p<10?p.toFixed(1).replace(".",","):String(Math.round(p)))+" %";
+function segTx(SV,ym,cm,mode,key){
+  const D=donutData(SV,ym,cm,mode),seg=D.segs.find(s=>s.key===key);
+  const keys=key==="__more"?(seg?seg.members.map(m=>m.key):[]):[key],list=[];
+  for(const t of SV.tx){
+    if(mkey(t)!==ym)continue;const c=cm.get(t.h);if(c===TRANSFER)continue;let k;
+    if(mode==="in"){if(t.amt<=0)continue;k=c==null?"(unsortiert)":c;}
+    else if(mode==="acc"){if(t.amt>=0)continue;k=t.a;}
+    else{if(t.amt>=0)continue;k=c==null?"(unsortiert)":c;}
+    if(keys.includes(k))list.push(t);
+  }
+  return {D,seg,list:list.sort((a,b)=>Math.abs(b.amt)-Math.abs(a.amt))};
+}
+function donutCard(SV,cm,ym){
+  const P=ui.pie,D=donutData(SV,ym,cm,P.mode),ML={out:"Ausgaben",in:"Einnahmen",acc:"Konten"};
+  let h=`<section class="card"><div class="chips" role="group" aria-label="Diagramm">${["out","in","acc"].map(m=>`<button data-a="pieMode" data-m="${m}" aria-pressed="${P.mode===m}">${ML[m]}</button>`).join("")}</div>`;
+  if(!D.total)return h+`<p class="muted">Keine ${P.mode==="in"?"Einnahmen":"Ausgaben"} in diesem Monat.</p></section>`;
+  const R=70,CI=2*Math.PI*R;let off=0;
+  const circ=D.segs.map(s=>{
+    const len=s.amt/D.total*CI,el=`<circle cx="100" cy="100" r="${R}" fill="none" stroke="${s.color}" stroke-width="30" stroke-dasharray="${len.toFixed(2)} ${(CI-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 100 100)" data-a="seg" data-k="${esc(s.key)}" role="button" tabindex="0" aria-label="${esc(segLabel(P.mode,s.key))}: ${fmt0(s.amt)}, ${pctTxt(s.pct)}"/>`;
+    off+=len;return el;
+  }).join("");
+  h+=`<svg viewBox="0 0 200 200" class="donut" role="group" aria-label="${ML[P.mode]} ${mLabel(ym)}, Gesamt ${fmt0(D.total)}. Die Liste darunter enthält dieselben Werte.">${circ}<text x="100" y="98" text-anchor="middle" class="dtot">${fmt0(D.total)}</text><text x="100" y="118" text-anchor="middle" class="dlab">${P.mode==="in"?"Einnahmen":P.mode==="acc"?"nach Konto":"Ausgaben"}</text></svg><ul class="plist">`;
+  for(const s of D.segs){
+    h+=`<li><button data-a="seg" data-k="${esc(s.key)}" aria-label="${esc(segLabel(P.mode,s.key))}, ${fmt0(s.amt)}, ${pctTxt(s.pct)}${s.key==="__more"?", aufklappen":", Buchungen anzeigen"}"><i class="dot" style="background:${s.color}"></i><span class="pn">${esc(segLabel(P.mode,s.key))}${s.key==="__more"?` (${s.members.length}) ${P.more?"▴":"▾"}`:""}</span><span class="num">${fmt0(s.amt)}</span><span class="pp num">${pctTxt(s.pct)}</span></button></li>`;
+    if(s.key==="__more"&&P.more)for(const m of s.members)h+=`<li class="sub"><button data-a="seg" data-k="${esc(m.key)}"><i class="dot" style="background:${m.color}"></i><span class="pn">${esc(segLabel(P.mode,m.key))}</span><span class="num">${fmt0(m.amt)}</span><span class="pp num">${pctTxt(m.pct)}</span></button></li>`;
+  }
+  return h+`</ul></section>`;
+}
+/* ---------- Eigene Buchung / Dauerposten ---------- */
+function collectAdd(){
+  const A=ui.add;if(!A||!$("#man-amt"))return;
+  A.amt=$("#man-amt").value;A.cat=$("#man-cat").value;A.date=$("#man-date").value||A.date;A.note=$("#man-note").value;A.acc=$("#man-acc").value;A.rep=$("#man-rep").checked;A.end=$("#man-end").value;
+}
+function addHtml(){
+  const A=ui.add,accs=S.accounts.filter(a=>!a.virtual),cats=S.cats.filter(c=>c!==TRANSFER),editing=!!(A.edit||A.recId);
+  return `<p class="big">${editing?"Eintrag bearbeiten":"Eigene Buchung hinzufügen"}</p>
+  <div class="chips" role="group" aria-label="Art"><button data-a="manType" data-m="out" aria-pressed="${A.type==="out"}">Ausgabe</button><button data-a="manType" data-m="in" aria-pressed="${A.type==="in"}">Einnahme</button></div>
+  <label class="fld">Betrag (€)<input id="man-amt" inputmode="decimal" value="${esc(A.amt)}" placeholder="0,00"></label>
+  <label class="fld">Kategorie<select id="man-cat">${cats.map(c=>`<option value="${esc(c)}" ${c===A.cat?"selected":""}>${esc(catLabel(c))}</option>`).join("")}</select></label>
+  <label class="fld">Datum<input id="man-date" type="date" value="${esc(A.date)}"></label>
+  <label class="fld">Notiz (optional)<input id="man-note" value="${esc(A.note)}" placeholder="z. B. Bargeld, Flohmarkt"></label>
+  <label class="fld">Konto<select id="man-acc"><option value="man" ${A.acc==="man"?"selected":""}>Bar / Sonstiges</option>${accs.map(a=>`<option value="${esc(a.id)}" ${A.acc===a.id?"selected":""}>${esc(a.name)}</option>`).join("")}</select></label>
+  <label class="chk"><input type="checkbox" id="man-rep" ${A.rep?"checked":""}> Jeden Monat wiederholen (Dauerposten, ab dem Datum)</label>
+  <label class="fld">Wiederholen bis (optional)<input id="man-end" type="date" value="${esc(A.end||"")}"></label>
+  <div class="row"><button class="btn p" data-a="manSave">Speichern</button>${editing?`<button class="btn s dang" data-a="manDel">Löschen</button>`:""}<button class="btn" data-a="sheetClose">Abbrechen</button></div>`;
+}
+const newAdd=()=>({type:"out",amt:"",cat:"Sonstiges",date:todayStr(),note:"",acc:"man",rep:false,end:"",edit:null,recId:null});
+/* ---------- Import-Leitfaden mit Abdeckung ---------- */
+function guideHtml(){
+  const cp=commonPeriod(S);
+  let h=`<details class="dt card" data-id="guide" ${ui.det.guide===false?"":"open"}><summary>Sauber importieren</summary><div class="dbody"><ol class="steps"><li>Wähle für <b>alle Konten denselben Zeitraum</b>, z. B. die letzten 3 oder 6 Monate.</li><li>Nimm jeweils <b>ganze Monate</b>: vom 1. bis zum Monatsletzten.</li><li>Importiere alle Konten und prüfe hier die Abdeckung.</li></ol>`;
+  if(!cp)return h+`<p class="muted small">Noch keine Buchungen importiert.</p></div></details>`;
+  const mn=cp.accs.reduce((m,a)=>a.first<m?a.first:m,"9999-99-99"),mx=cp.accs.reduce((m,a)=>a.last>m?a.last:m,""),span=Math.max(1,dayNum(mx)-dayNum(mn));
+  h+=`<h3 class="sec">Abdeckung je Konto</h3>`+cp.accs.map(a=>{const l=(dayNum(a.first)-dayNum(mn))/span*100,w=Math.max(2,(dayNum(a.last)-dayNum(a.first))/span*100);
+    return `<div class="cov"><div class="kv small"><span>${esc(a.name)}</span><span>${dl2(a.first)} bis ${dl2(a.last)}${cp.inactive.includes(a)?" (nicht mehr aktuell)":""}</span></div><div class="covbar" role="img" aria-label="${esc(a.name)}: ${dl2(a.first)} bis ${dl2(a.last)}"><i style="left:${l.toFixed(1)}%;width:${w.toFixed(1)}%"></i></div></div>`;}).join("");
+  h+=cp.act.length>1||cp.ok?(cp.ok?`<p class="status">Gemeinsamer Zeitraum aller Konten: <b>${dl2(cp.from)} bis ${dl2(cp.to)}</b>.${cp.act.length>1?` Der Beginn wird von ${esc(cp.limFrom)} begrenzt, das Ende von ${esc(cp.limTo)}.`:""}</p>`:`<p class="err" role="alert">Kein gemeinsamer Zeitraum: ${esc(cp.limFrom)} beginnt erst am ${dl2(cp.from)}, ${esc(cp.limTo)} endet schon am ${dl2(cp.to)}.</p>`):"";
+  for(const w of cp.warn)h+=`<p class="warnt">⚠ ${esc(w.name)} ist deutlich ${w.kind} als die anderen Konten. Lade für alle Konten denselben Zeitraum.</p>`;
+  if(cp.lastMonth)h+=`<p class="muted small">Letzter Monat, für den alle Konten vollständig sind: <b>${mLabel(cp.lastMonth)}</b>.</p>`;
+  else h+=`<p class="warnt">Noch kein Monat ist für alle Konten vollständig.</p>`;
+  return h+`</div></details>`;
+}
+const V6ACT={
+  accF:el=>{ui.acc=el.dataset.id;render();},
+  pieMode:el=>{ui.pie.mode=el.dataset.m;ui.pie.more=false;render();},
+  seg:el=>{const k=el.dataset.k;if(k==="__more"){ui.pie.more=!ui.pie.more;render();}else{ui.sheet={t:"seg",mode:ui.pie.mode,key:k};render();}},
+  monthCommon:()=>{const cp=commonPeriod(S);if(cp&&cp.lastMonth){ui.month=cp.lastMonth;render();}},
+  addOpen:()=>{ui.add=newAdd();ui.sheet={t:"add"};render();},
+  manType:el=>{collectAdd();const A=ui.add;A.type=el.dataset.m;if(A.type==="in"&&A.cat==="Sonstiges")A.cat=INCOME;if(A.type==="out"&&A.cat===INCOME)A.cat="Sonstiges";render();},
+  manEdit:el=>{const t=S.tx.find(x=>x.h===el.dataset.h);if(!t)return;ui.add=Object.assign(newAdd(),{type:t.amt>0?"in":"out",amt:String(Math.abs(t.amt)).replace(".",","),cat:t.c||"Sonstiges",date:t.d,note:t.p||"",acc:t.a,edit:t.h});ui.sheet={t:"add"};render();},
+  recEdit:el=>{const r=S.recur.find(x=>x.id===(el.dataset.id||(S.tx.find(t=>t.h===el.dataset.h)||{}).rec));if(!r)return;ui.add=Object.assign(newAdd(),{type:r.amt>0?"in":"out",amt:String(Math.abs(r.amt)).replace(".",","),cat:r.cat,date:r.start,note:r.n,acc:r.a||"man",rep:true,end:r.end||"",recId:r.id});ui.sheet={t:"add"};render();},
+  manSave:()=>{
+    collectAdd();const A=ui.add,v=parseNum(A.amt,true);
+    if(!(v>0)){toast("Bitte einen Betrag eintragen");return;}
+    if(!A.date){toast("Bitte ein Datum wählen");return;}
+    const amt=(A.type==="in"?1:-1)*v,note=(A.note||"").trim();
+    mutate(()=>{
+      if(A.rep){
+        if(A.edit){const t=S.tx.find(x=>x.h===A.edit);if(t){S.del.push(t.h);S.tx=S.tx.filter(x=>x.h!==t.h);}}
+        if(A.recId){const r=S.recur.find(x=>x.id===A.recId);if(r){Object.assign(r,{n:note||catLabel(A.cat),amt,cat:A.cat,a:A.acc,start:A.date,end:A.end||null,rev:(r.rev||1)+1});removeRecurTx(S,r.id);}}
+        else S.recur.push({id:uid(),n:note||catLabel(A.cat),amt,cat:A.cat,a:A.acc,start:A.date,end:A.end||null,rev:1});
+        materializeRecur(S,todayStr());
+      }else if(A.edit){
+        const t=S.tx.find(x=>x.h===A.edit);if(t){Object.assign(t,{amt,c:A.cat,d:A.date,p:note||catLabel(A.cat),a:A.acc,u:Date.now()});}
+      }else S.tx.push({h:"man-"+uid(),a:A.acc,d:A.date,amt,p:note||catLabel(A.cat),t:"",c:A.cat,man:true,u:Date.now()});
+      ui.sheet=null;ui.add=null;
+      if(A.date.slice(0,7)<=nowYM()&&!A.rep)ui.month=A.date.slice(0,7);
+    },true);
+    toast(A.rep?"Dauerposten gespeichert":"Gespeichert");
+  },
+  manDel:()=>{
+    const A=ui.add;if(!confirm(A.recId?"Dauerposten und alle seine Monatsbuchungen löschen?":"Diese Buchung löschen?"))return;
+    mutate(()=>{
+      if(A.recId){S.recur=S.recur.filter(r=>r.id!==A.recId);removeRecurTx(S,A.recId);}
+      else if(A.edit){S.tx=S.tx.filter(t=>t.h!==A.edit);S.del.push(A.edit);}
+      ui.sheet=null;ui.add=null;
+    },true);
+  },
+  recDel:el=>{if(!confirm("Dauerposten und alle seine Monatsbuchungen löschen?"))return;mutate(()=>{S.recur=S.recur.filter(r=>r.id!==el.dataset.id);removeRecurTx(S,el.dataset.id);},true);},
+  wipeTx:()=>{
+    const n=S.tx.filter(t=>!t.man).length;
+    if(!confirm("Alle "+n+" importierten Buchungen löschen?\n\nKonten, Kategorien, Regeln, Plan, feste Kosten, Profil und Tresor sowie deine manuellen Buchungen und Dauerposten bleiben erhalten.\n\nLade danach alle Konten für denselben Zeitraum neu."))return;
+    mutate(()=>{wipeImported(S,Date.now());ui.sheet=null;},true);
+    ui.tab="im";render();toast(n+" Buchungen gelöscht. Lade jetzt alle Konten für denselben Zeitraum neu.");window.scrollTo(0,0);
+  }
+};
+Object.assign(ACT,V6ACT);
 
 /* ---------- Tresor ---------- */
 const V={open:false,unlocked:false,last:0,pin:"",step:"enter",first:"",fails:0,lockUntil:0,msg:"",busy:false};
@@ -1548,7 +1900,7 @@ function renderOv(){
     <button class="btn p w" data-a="pok" ${V.pin.length>=4?"":"disabled"}>OK</button></div>`;
     return;
   }
-  const accRows=S.accounts.map(a=>{const auto=latestBal(S,a.id),ov=S.vault.ov[a.id];return `<div class="erow"><span class="rk">${esc(a.name)}</span><input inputmode="decimal" data-vi="ov" data-id="${esc(a.id)}" value="${ov!=null?ov:(auto!=null?auto:"")}" placeholder="0" aria-label="Stand ${esc(a.name)}"></div>`;}).join("");
+  const accRows=S.accounts.filter(a=>!a.virtual).map(a=>{const auto=latestBal(S,a.id),ov=S.vault.ov[a.id];return `<div class="erow"><span class="rk">${esc(a.name)}</span><input inputmode="decimal" data-vi="ov" data-id="${esc(a.id)}" value="${ov!=null?ov:(auto!=null?auto:"")}" placeholder="0" aria-label="Stand ${esc(a.name)}"></div>`;}).join("");
   const free=S.vault.free.map(f=>`<div class="erow b3"><input data-vi="fn" data-id="${esc(f.id)}" value="${esc(f.name)}" aria-label="Bezeichnung"><input inputmode="decimal" data-vi="fv" data-id="${esc(f.id)}" value="${f.val==null?"":f.val}" aria-label="Wert" placeholder="0"><button class="btn s" data-a="vfdel" data-id="${esc(f.id)}" aria-label="Posten löschen">×</button></div>`).join("");
   o.innerHTML=`<div class="ovin" role="dialog" aria-modal="true" aria-label="Tresor"><div class="vhead"><h2 class="sec">Tresor</h2><button class="btn s p" data-a="vlock">Sperren</button></div>
    <div class="tile big1"><span>Gesamtvermögen</span><b class="num">${fmt(vaultTotal())}</b></div>
@@ -1677,7 +2029,7 @@ document.addEventListener("input",e=>{
   V.last=Date.now();
   if(e.target.id==="ruleQ"){ui.ruleQ=e.target.value;const pos=e.target.selectionStart;render();const n=$("#ruleQ");if(n){n.focus();n.setSelectionRange(pos,pos);}}
 });
-document.addEventListener("keydown",e=>{V.last=Date.now();if((e.key==="Enter"||e.key===" ")&&e.target.tagName==="LABEL"){e.preventDefault();e.target.click();}if(e.key==="Escape"){if(V.open)vaultLock();else if(ui.sheet){ui.sheet=null;render();}}});
+document.addEventListener("keydown",e=>{V.last=Date.now();if((e.key==="Enter"||e.key===" ")&&e.target.getAttribute&&e.target.getAttribute("role")==="button"&&e.target.tagName!=="BUTTON"){e.preventDefault();e.target.dispatchEvent(new MouseEvent("click",{bubbles:true}));}if((e.key==="Enter"||e.key===" ")&&e.target.tagName==="LABEL"){e.preventDefault();e.target.click();}if(e.key==="Escape"){if(V.open)vaultLock();else if(ui.sheet){ui.sheet=null;render();}}});
 /* Drag & Drop und Einfügen von Dateien im Import-Reiter */
 const impOpen=()=>ui.tab==="im"&&ui.imp.stage==="in";
 document.addEventListener("dragover",e=>{if(impOpen())e.preventDefault();});
@@ -1701,7 +2053,7 @@ window.addEventListener("fb",()=>{if(META.pass&&!SY.unsub)syncStart();});
 async function boot(){
   META=Object.assign({theme:"auto",pass:null},await kvGet("meta"));
   const raw=await kvGet("state"),was=(raw&&raw.v)||1;S=normalizeState(raw);if(raw&&was<SCHEMA){S.cfgTs=Date.now();kvSet("state",S);}
-  const lm=lastDataMonth();if(lm)ui.month=lm; /* Start: letzter Monat mit Daten */
+  {const cp=commonPeriod(S),lm=lastDataMonth();ui.month=(cp&&cp.lastMonth)||lm||ui.month;} /* Start: letzter Monat, den alle Konten abdecken */
   applyTheme();render();maybeWizard();
   if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("sw.js").catch(()=>{});
   if(META.pass){if(window.FB)syncStart();else setSy("offline","Firebase wird geladen …");}

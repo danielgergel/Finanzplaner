@@ -3,7 +3,7 @@
 Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics, keine Drittanbieter-Skripte außer Firebase (gstatic) und Google Fonts.
 
 ## Deployment
-Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v4`) lädt Netz zuerst (3 s), dann Cache.
+Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v6`) lädt Netz zuerst (3 s), dann Cache.
 
 ## CSV-Import
 Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfen (neu/Duplikate), übernehmen.
@@ -41,7 +41,7 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v4` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v6` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
@@ -77,3 +77,23 @@ Solange weder Einkommen noch Plan gesetzt sind, gibt es keine Ampel, sondern ein
 - **CSV:** `+1.234,56`, Leerzeichen und Non-Breaking-Space in Beträgen, Soll/Haben getrennt, Umsatzart Eingang/Ausgang bei unsignierten Beträgen (Spalten Umsatztyp, Umsatzart, Buchungsart), Suffixe S/H und CR/DR.
 - **PDF:** Vorzeichen aus (1) ausdrücklicher Markierung (S/H, +/-, CR/DR), (2) Differenz der Saldo-Spalte zur vorigen Zeile, (3) Position in der Soll/Haben-Spalte (x-Koordinate), (4) Stichwort oder Schätzung. Unsichere Zeilen stehen in der Vorschau unter "Vorzeichen unsicher" und lassen sich einzeln (↔) oder alle umdrehen.
 - **Mehr, Import prüfen:** pro Konto Anzahl, Summe positiver und negativer Beträge und Zeitraum, ohne Buchungstexte.
+
+## Einnahmen nachvollziehen (Version 5)
+- Unter der Zusammenfassung steht "Einnahmen: X aus n Buchungen (Gehalt: Y)". Tippen öffnet alle Buchungen der Summe nach Betrag, die Summe, die Einnahmen je Konto und den Block "Nicht mitgezählt" (Umbuchung, Kreditkarte bezahlt) mit dem Knopf "Doch als Einnahme zählen".
+- **Gehalt am Monatswechsel:** Wird das Gehalt am 30. oder 31. gebucht oder am 1. bis 3. des Folgemonats, steht es im Nachbarmonat. Im Sheet erscheint "Gehalt zum Monatswechsel" mit "In <Monat> zählen" (optionales Feld `mo` an der Buchung, rückgängig mit "Zurück").
+- **Mögliche Duplikate:** Eingänge werden nie still übersprungen, nur mögliche Duplikate bei Ausgaben auf Wunsch. Beim Import als Duplikat verworfene Buchungen werden nicht gespeichert.
+- **Umbuchungs-Paarung:** Beträge ab 500 Euro werden nur gepaart, wenn der Text nach Übertrag aussieht. PDF: Dezember im Auszug "1/2026" bekommt das Vorjahr.
+
+## Rechnen pro Monat und Abdeckung (Version 5)
+- **Alles pro Kalendermonat.** Nichts wird über den ganzen Importzeitraum aufsummiert. Ø-Werte (Gehalt, Ø pro Monat, Wiederkehr) nutzen nur vollständige Monate.
+- **Abdeckung je Konto:** Zeitraum = erstes bis letztes Buchungsdatum des Kontos. Ein Monat ist für ein Konto nur vollständig, wenn er komplett darin liegt (ein Auszug vom 1. bis Monatsletzten zählt). Konten mit 90, 180 oder 365 Tagen werden so einzeln richtig gerechnet. In der Monatsansicht warnt eine Zeile "Konto X deckt diesen Monat nicht ab – Zahlen unvollständig". Der laufende Monat warnt nur, wenn der Import älter als 3 Tage ist. Der Vormonatsvergleich erscheint nur bei vollständigem Vormonat.
+- **Ø pro Monat** (Monat, Link unter den Einnahmen, oder Mehr): Zeitraum letzte 3 / 6 / 12 / alle vollständigen Monate. Je Konto Summe / Anzahl der vollständigen Monate, die Konten werden addiert. Zeilen für Einnahmen, Fixkosten, Variabel, Sparen/Anlegen, Übrig, je Kategorie mit "Ø aus n Monaten" und bei weniger als 3 Monaten "wenig Daten". Bei Fixkosten steht "Plan X · real Y".
+- **Fixkosten automatisch erkannt:** gleicher Händler, Betrag ±10 %, fast jeden Monat; oder regelmäßig alle 3, 6 oder 12 Monate (z. B. 25 Euro alle 3 Monate = 8,33 pro Monat). Nur ein Vorschlag mit Bestätigung, übernommen wird der Betrag pro Monat.
+- **Datenformat:** unverändert (keine neuen Felder), Daniels Daten bleiben erhalten.
+
+## Version 6: Diagramm, eigene Buchungen, Neustart, Kontofilter
+- **Kreisdiagramm** (Monatsansicht, inline SVG, kein Framework): Umschalter Ausgaben / Einnahmen / Konten. Ausgaben ohne Umbuchungen und ohne Einnahmen, Mitte = Gesamtsumme, Unsortiert grau, Kategorien unter 3 % als aufklappbare Gruppe "Weitere". Feste Farben je Kategorie. Unter dem Diagramm steht dieselbe Liste als Text (barrierefrei). Tipp auf Segment oder Zeile zeigt Betrag, Anteil und die Buchungen.
+- **Kontofilter** oben in der Monatsansicht (Alle Konten / einzelnes Konto), wirkt auf Zusammenfassung, Diagramm und Listen. Umbuchungen werden weiter über alle Konten erkannt. Die Diagnose unter Mehr zeigt je Konto den Saldo der Buchungen (kein Kontostand, der bleibt im Tresor).
+- **Eigene Buchungen:** Plus-Knopf unten rechts (Betrag, Ausgabe/Einnahme, Kategorie, Datum, Notiz, Konto, optional "Jeden Monat wiederholen" mit Enddatum). Markierung ✎, bzw. ⟳ bei Dauerposten; bearbeiten und löschen über die Buchung, Dauerposten außerdem unter Mehr. Sie zählen in alle Summen, Diagramme und Ø pro Monat. Sie liegen im virtuellen Konto "Manuell" (immer voll abgedeckt, keine Abdeckungs-Warnung) und werden von Importen und der Duplikat-Erkennung nie verändert. Neue Felder: `man`, `rec` an Buchungen, `recur[]` (Dauerposten), Konto `man`, `delw` (Löschzeitstempel). Schema 4, additiv und idempotent migriert, ältere App-Versionen verlieren beim Sync nichts.
+- **Neu aufsetzen** (Mehr): "Nur Buchungen löschen (Einstellungen behalten)" entfernt alle importierten Buchungen samt Import-Hashes und behält Konten, Kategorien, Regeln, Plan, feste Kosten, Profil, Tresor sowie manuelle Buchungen und Dauerposten. Mit Sync werden die gelöschten Buchungen über Löschzeitstempel auch auf anderen Geräten entfernt, ein Neuimport bleibt trotzdem erhalten. Danach alle Konten für denselben Zeitraum neu laden.
+- **Sauber importieren** (Import): Leitfaden (gleicher Zeitraum für alle Konten, ganze Monate), Abdeckung je Konto als Balken mit von/bis, "Gemeinsamer Zeitraum aller Konten" mit dem begrenzenden Konto und Warnung bei deutlich kürzeren oder längeren Konten. Konten, die seit mehr als 62 Tagen nichts Neues haben, blockieren den gemeinsamen Zeitraum nicht. Die Monatsansicht startet auf dem letzten Monat, den alle aktiven Konten vollständig abdecken.
