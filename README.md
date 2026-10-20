@@ -3,7 +3,7 @@
 Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics, keine Drittanbieter-Skripte außer Firebase (gstatic) und Google Fonts.
 
 ## Deployment
-Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v7`) lädt Netz zuerst (3 s), dann Cache.
+Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v8`) lädt Netz zuerst (3 s), dann Cache.
 
 ## CSV-Import
 Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfen (neu/Duplikate), übernehmen.
@@ -41,7 +41,7 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v7` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v8` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
@@ -100,3 +100,10 @@ Solange weder Einkommen noch Plan gesetzt sind, gibt es keine Ampel, sondern ein
 
 ## Version 7: Donut als Hauptansicht
 Das Kreisdiagramm steht direkt unter der Zusammenfassung der Monatsansicht (Kontofilter darüber). Die Kategorie-Zeilen haben keine Fortschrittsbalken mehr, sondern Ampel-Punkt, Segmentfarbe als Punkt und Text "Ist / Richtwert · Prozent". Rote Kategorien tragen zusätzlich ⚠ (Farbenblindheit). Ø pro Monat zeigt die Aufteilung des Einkommens (Fixkosten, Variabel, Sparen, Übrig) als kleinen Donut. Das Balken-Element bleibt nur als Zeitachse im Import-Leitfaden und als Fortschritt im Sortieren-Ablauf. Daten und Schema unverändert.
+
+## Version 8: Eigenüberweisungen, Gehaltsvorschlag, bessere Zuordnung
+- **Spalten (DKB-Stil):** Händler = Zahlungsempfänger*in bei Ausgang, Zahlungspflichtige*r bei Eingang; zusätzlich werden IBAN (nur als Hash gespeichert) und Gläubiger-ID gelesen. Status "Vorgemerkt" wird ausgeschlossen.
+- **Eigenüberweisungen:** Der Kontoinhaber wird beim Import aus den Daten abgeleitet (Name, der auf der eigenen Seite der Buchungen häufig vorkommt) und unter Mehr, "Mein Name" angezeigt und änderbar. Überweisungen von und an den eigenen Namen oder an erkannte eigene Konten (IBAN) zählen als Umbuchung. Für schon importierte Daten fragt die Monatsansicht einmal nach ("Sind das deine eigenen Überweisungen?"). Außerdem gilt ein Zahlungsempfänger "Revolut" als Umbuchung.
+- **Gehalt ohne Stichwort:** Der größte regelmäßig wiederkehrende Eingang gleichen Absenders wird als Vorschlag gezeigt ("Ist das dein Gehalt?"). Bei Ja entsteht eine Regel nur auf den Absender, die nur für Eingänge gilt (Regelfeld `in`).
+- **Zuordnung:** Viele neue generische Standardregeln (Kantinen, Tankstellen, Supermärkte auch im Ausland, Apotheken, Bekleidung, Streaming, Versicherungen, Verkehr, Baumärkte, Prop-Trading-Firmen, Banken-Automaten). Bei PayPal, Klarna & Co. wird der Händler aus dem Verwendungszweck gelesen ("Ihr Einkauf bei ..."). Nicht zugeordnete Ausgaben übernehmen die Kategorie von Buchungen mit gleicher Gläubiger-ID oder gleichem Händler (auch erster Wortteil), sofern dort mindestens 80 % dieselbe Kategorie haben. Zahlungsdienstleister werden dabei nie als Händler gelernt.
+- **Daten:** Schema 5, additiv. Neue Standardregeln werden beim Laden einmalig am Ende ergänzt, eigene Regeln bleiben vorn. Neue optionale Felder: `g`, `ib` an Buchungen, `profile.myNames`, `profile.myIbans`, `profile.skipNames`, Regelfeld `in`.
