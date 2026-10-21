@@ -224,6 +224,12 @@ body.hasnav{padding-block-end:calc(170px + env(safe-area-inset-bottom,0px))}
 
 .warnrow{padding-left:14px;font-size:14px}
 
+.tlw{display:flex;align-items:center;gap:4px;border-top:0}
+.tlw .tl{flex:1;min-width:0}
+.fl{flex:none;width:44px;min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface2);font:700 18px var(--f-body)}
+.tl.static .fl{margin-left:6px}
+.warnbox{border:1px solid var(--warn);margin:8px 0}
+
 </style></head><body>
 <div class="wrap">
 <header><div class="hin"><h1 id="ttl">Finanzplaner</h1>
@@ -420,11 +426,12 @@ const FIELD_PATS=[
  ["haben",[/^(haben|gutschrift|credit|moneyin|einnahme|einnahmen)$/]],
  ["payeeOut",[/^(zahlungsempf|empfaenger)/]],
  ["payeeIn",[/^(zahlungspflichtige|auftraggeber)/]],
- ["payee",[/^(beguenstigter|name$|partner|counterparty|haendler|merchant|payee)/]],
+ ["payee",[/^(beguenstigter|name$|partner|counterparty|haendler|merchant|payee|sender)/]],
  ["text",[/^verwendungszweck/,/^(description|beschreibung)/,/^(zweck|details|memo|reference|referenz)/,/^buchungstext/]],
  ["iban",[/^(iban|kontonummeriban)$/]],
  ["cred",[/^glaeubiger/]],
  ["type",[/^(umsatztyp|umsatzart|buchungsart)$/]],
+ ["btext",[/^buchungstext$/,/^type$/,/^transactiontype$/,/^transaktionsart$/]],
  ["bal",[/^(saldo|balance|kontostand)/]],
  ["fee",[/^(fee|gebuehr)/]],
  ["state",[/^(state|status)$/]]
@@ -449,7 +456,8 @@ function analyzeCSV(text,saved){
 }
 function extractRows(a,opt){
   opt=opt||{};const {rows,hr,cols,delim}=a,de=delim===";"||opt.de;
-  const out=[];let skipped=0;
+  const out=[];let skipped=0,cn=0,cb=0;
+  const NEGW=/lastschrift|abbuchung|ausgang|belastung|entgelt|gebuehr|kartenzahlung|dauerauftrag|bargeld|abgang|card_payment|^atm$|^fee$|^debit$/,POSW=/gutschrift|eingang|zahlungseingang|zugang|erstattung|^topup$|card_refund|^refund$|^credit$/;
   const get=(r,k)=>cols[k]!=null?(r[cols[k]]||""):"";
   for(let i=hr+1;i<rows.length;i++){
     const r=rows[i];const d=parseDate(get(r,"date"));
@@ -463,7 +471,7 @@ function extractRows(a,opt){
       if(isNaN(s)&&isNaN(h))amt=NaN;else amt=(isNaN(h)?0:Math.abs(h))-(isNaN(s)?0:Math.abs(s));
     }
     if(isNaN(amt)){skipped++;continue;}
-    if(cols.type!=null){const ty=get(r,"type").toLowerCase();if(/ausgang|belastung|abbuchung/.test(ty))amt=-Math.abs(amt);else if(/eingang|gutschrift/.test(ty))amt=Math.abs(amt);}
+    if(cols.type!=null){const ty=get(r,"type").toLowerCase();if(/ausgang|belastung|abbuchung|abgang|^soll$|^debit$/.test(ty))amt=-Math.abs(amt);else if(/eingang|gutschrift|zugang|^haben$|^credit$/.test(ty))amt=Math.abs(amt);}
     if(cols.fee!=null){const f=parseNum(get(r,"fee"),de);if(!isNaN(f))amt-=Math.abs(f);}
     amt=Math.round(amt*100)/100;
     if(opt.inv)amt=-amt;
@@ -471,12 +479,20 @@ function extractRows(a,opt){
     const p=amt<0?(pOut||pg||pIn):(pIn||pg||pOut);
     const bal=cols.bal!=null?parseNum(get(r,"bal"),de):NaN;
     const ibr=get(r,"iban").replace(/\s/g,"").toUpperCase(),cr=get(r,"cred").trim();
+    if(cols.btext!=null){const w=norm(get(r,"btext")).toLowerCase();const neg=NEGW.test(w),pos=POSW.test(w);if(neg!==pos){cn++;if((neg&&amt>0)||(pos&&amt<0))cb++;}}
     out.push({d,amt,p:p||"",t:get(r,"text"),b:isNaN(bal)?undefined:(opt.inv?-bal:bal),x:(amt<0?pIn:pOut)||undefined,ib:ibr.length>=10?cyrb53(ibr):undefined,g:cr||undefined});
   }
   /* Reihenfolge: o = je höher, desto neuer (Dateien sind oft neueste zuerst) */
   const newestFirst=out.length>1&&out[0].d>=out[out.length-1].d;
   out.forEach((x,i)=>{x.o=newestFirst?out.length-1-i:i;});
-  return {rows:out,skipped};
+  return {rows:out,skipped,conf:{n:cn,bad:cb}};
+}
+/* Saldo-Differenz-Pruefung: passt die Saldo-Spalte nur mit umgekehrten Vorzeichen? */
+function signCheck(rows){
+  const r=rows.filter(x=>x.b!=null);if(r.length<6||r.length<rows.length*0.7)return null;
+  const run=list=>{let fwd=0,inv=0,n=0;for(let i=1;i<list.length;i++){const diff=Math.round((list[i].b-list[i-1].b)*100)/100,a=list[i].amt;n++;if(Math.abs(diff-a)<0.015)fwd++;else if(Math.abs(diff+a)<0.015)inv++;}return {fwd,inv,n};};
+  const A=run(r),B=run([...r].reverse()),x=A.fwd+A.inv>=B.fwd+B.inv?A:B;
+  return {n:x.n,fwd:x.fwd,inv:x.inv,suggestInv:x.n>=5&&x.inv>=x.n*0.7&&x.fwd<x.n*0.2};
 }
 function assignHashes(rows,accId){
   const seen={};
@@ -805,6 +821,25 @@ function applyRentMonths(S,cm){
   }
   return n;
 }
+/* Plus/Minus einer Buchung umdrehen (Feld fl, Original oa). Ausgabe <-> Eingang; Kategorie wird neu berechnet:
+   nur eine einzeln gesetzte Zuordnung (mn) bleibt, sonst wird sie geleert (merkt sich pc fuer das Zurueckdrehen).
+   Nochmal umdrehen stellt das Original wieder her. Dauerposten sind ausgenommen. */
+function flipTx(t){
+  if(!t||t.rec)return false;
+  if(t.fl){t.amt=t.oa;delete t.fl;delete t.oa;if(t.pc!==undefined){if(!t.c)t.c=t.pc;delete t.pc;}}
+  else{t.oa=t.amt;t.amt=-t.amt;t.fl=true;if(t.c&&!t.mn){t.pc=t.c;t.c=undefined;t.rl=undefined;}}
+  t.u=Date.now();return true;
+}
+/* Alle Buchungen desselben Gegenuebers (gleicher Haendler-Schluessel, gleiches Konto), die gleich "stehen" wie t:
+   t umgedreht -> alle umgedrehten zurueck; t normal -> alle normalen umdrehen */
+function flipGroup(S,t){
+  const k=merchantKey(t),want=!!t.fl;
+  return S.tx.filter(x=>x.a===t.a&&!x.rec&&merchantKey(x)===k&&!!x.fl===want);
+}
+/* Alle Buchungen eines Kontos in einem Monatsbereich (von..bis, YYYY-MM; leer = offen) */
+function flipRangeList(S,accId,from,to){
+  return S.tx.filter(x=>x.a===accId&&!x.man&&!x.rec&&(!from||mkey(x)>=from)&&(!to||mkey(x)<=to));
+}
 /* Diagnose je Konto: nur Zahlen, keine Texte oder Namen aus Buchungen */
 function importDiag(S){
   return S.accounts.map(a=>{
@@ -983,7 +1018,7 @@ const dupTokens=s=>new Set(tok(s).filter(w=>w.length>=4&&/^[A-Z]+$/.test(w)&&!GE
 function markDups(S,rows,accId){
   const known=new Set(S.tx.filter(t=>!t.man).map(t=>t.h));for(const d of S.del)known.add(d);
   const soft=new Map();
-  for(const t of S.tx){if(t.a!==accId||t.man)continue;const k=t.d+"|"+Math.round(t.amt*100);(soft.get(k)||soft.set(k,[]).get(k)).push(dupTokens((t.p||"")+" "+(t.t||"")));}
+  for(const t of S.tx){if(t.a!==accId||t.man)continue;const k=t.d+"|"+Math.round((t.fl&&t.oa!=null?t.oa:t.amt)*100);(soft.get(k)||soft.set(k,[]).get(k)).push(dupTokens((t.p||"")+" "+(t.t||"")));}
   for(const r of rows){
     r.dup=false;r.maybe=false;const k=r.d+"|"+Math.round(r.amt*100),arr=soft.get(k);
     if(known.has(r.h)){r.dup=true;if(arr&&arr.length)arr.shift();continue;}
@@ -1338,7 +1373,7 @@ function parsePdfLines(lines,opt){
   return {rows,unrec,needYear,ctx};
 }
 
-if(typeof module!=="undefined"&&module.exports)module.exports={ruleBreadth,reapplyRules,recurringBig,medianOf,kwMatch,kwParse,tok,fixPosts,applyRentMonths,MONTHS_DE,DEFKEYS,LEGACY_RULES,detectOwnCandidate,detectOwnNames,detectSalary,incomeSplit,MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
+if(typeof module!=="undefined"&&module.exports)module.exports={flipTx,flipGroup,flipRangeList,signCheck,ruleBreadth,reapplyRules,recurringBig,medianOf,kwMatch,kwParse,tok,fixPosts,applyRentMonths,MONTHS_DE,DEFKEYS,LEGACY_RULES,detectOwnCandidate,detectOwnNames,detectSalary,incomeSplit,MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
 
 /* ===== APP: Speicher, Sync, Oberfläche ===== */
 const $=s=>document.querySelector(s);
@@ -1560,7 +1595,7 @@ function vSort(){
   if(!cur)return h+`<div class="card"><p class="big">Rest später.</p><p class="muted">${skipped} Händler hast du übersprungen.</p><button class="btn p w" data-a="sortReset">Übersprungene jetzt zeigen</button></div>`;
   const g=cur,cats=mode==="in"?[INCOME,TRANSFER,"Trading",...S.cats.filter(c=>![INCOME,TRANSFER,"Trading"].includes(c))]:[...S.cats.filter(c=>c!==INCOME&&c!==TRANSFER),TRANSFER];
   h+=`<div class="card"><p class="big">${esc(g.name)}</p><p class="muted small">${g.tx.length} ${g.tx.length===1?"Buchung":"Buchungen"} · ${fmt(Math.abs(g.sum))}${mode==="in"?" Eingang":""}</p>
-  ${g.tx.slice(0,3).map(t=>`<div class="tl static"><span class="td">${dShort(t.d)}</span><span class="tt">${esc((t.t||t.p).slice(0,60))}</span><span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span></div>`).join("")}
+  ${g.tx.slice(0,3).map(t=>`<div class="tl static"><span class="td">${dShort(t.d)}</span><span class="tt">${esc((t.t||t.p).slice(0,60))}</span><span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span>${flipBtn(t)}</div>`).join("")}
   ${g.tx.length>3?`<p class="muted small">… und ${g.tx.length-3} weitere</p>`:""}
   <div class="cgrid">${cats.map(c=>`<button data-a="sortCat" data-k="${esc(g.k)}" data-c="${esc(c)}">${dot(c)}${esc(catLabel(c))}</button>`).join("")}</div>
   <label class="fld">Regel für künftige Buchungen (Stichwort)<input id="alwk" value="${esc(g.k)}" aria-label="Stichwort der Regel"></label>
@@ -1569,7 +1604,13 @@ function vSort(){
   return h;
 }
 /* ---------- Bottom-Sheets ---------- */
-function txRow(t){return `<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${t.man?(t.rec?"⟳ ":"✎ "):""}${esc((t.man?(t.p||t.t):(t.t||t.p)).slice(0,50))} <small class="faint">· ${esc(accName(t.a))}</small></span><span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span></button>`;}
+const flipBtn=t=>t.rec?"":`<button class="fl" data-a="flip" data-h="${esc(t.h)}" aria-label="Plus/Minus umdrehen" title="Plus/Minus umdrehen">±</button>`;
+function flipBlock(t){
+  if(t.rec)return `<p class="muted small">Dauerposten: Betrag und Art unter Mehr, Dauerposten ändern.</p>`;
+  const gl=flipGroup(S,t);
+  return `<div class="row"><button class="btn s p" data-a="flip" data-h="${esc(t.h)}">± Plus/Minus umdrehen</button>${gl.length>1?`<button class="btn s" data-a="flipGrp" data-h="${esc(t.h)}">Alle Buchungen dieses Händlers umdrehen (${gl.length})</button>`:""}</div>${t.fl?`<p class="muted small">Vorzeichen manuell umgedreht (Original ${fmt(t.oa)}). Nochmal tippen stellt es wieder her.</p>`:""}`;
+}
+function txRow(t){return `<div class="tlw"><button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${t.man?(t.rec?"⟳ ":"✎ "):""}${esc((t.man?(t.p||t.t):(t.t||t.p)).slice(0,50))} <small class="faint">· ${esc(accName(t.a))}</small></span>${t.fl?`<small class="warnt">±</small> `:""}<span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span></button>${flipBtn(t)}</div>`;}
 function renderSheet(){
   const el=$("#sheet"),sh=ui.sheet;
   const hide=()=>{ui.sheet=null;el.innerHTML="";el.classList.remove("on");};
@@ -1597,7 +1638,7 @@ function renderSheet(){
     const byA={};for(const t of pos)byA[t.a]=(byA[t.a]||0)+t.amt;
     const cn=t=>cm.get(t.h);
     inner=`<p class="big">Einnahmen ${mLabel(ui.month)}: ${fmt(sum)}</p><p class="muted small">Einnahmen sind nur Gehalt und ähnliches Einkommen (Kategorie Einkommen), ${pos.length} Buchungen. Alle anderen Eingänge stehen unter Weitere Eingänge und zählen nicht als Einnahmen.</p>`+
-      (pos.length?pos.map(t=>`<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${t.man?(t.rec?"⟳ ":"✎ "):""}${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,26))} <small class="faint">· ${esc(cn(t)==null?"unsortiert":catLabel(cn(t)))}${t.mo&&t.mo!==t.d.slice(0,7)?" · gebucht "+dShort(t.d):""}</small></span><span class="num pos">${fmt(t.amt)}</span></button>`).join(""):`<p class="muted">Keine Eingänge in diesem Monat.</p>`)+
+      (pos.length?pos.map(t=>`<div class="tlw"><button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${t.man?(t.rec?"⟳ ":"✎ "):""}${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,26))} <small class="faint">· ${esc(cn(t)==null?"unsortiert":catLabel(cn(t)))}${t.mo&&t.mo!==t.d.slice(0,7)?" · gebucht "+dShort(t.d):""}</small></span><span class="num pos">${fmt(t.amt)}</span></button>${flipBtn(t)}</div>`).join(""):`<p class="muted">Keine Eingänge in diesem Monat.</p>`)+
       `<div class="kv tot"><span>Summe</span><b class="num pos">${fmt(sum)}</b></div>`+
       `<h3 class="sec">Nach Konto</h3>`+S.accounts.filter(a=>S.tx.some(t=>t.a===a.id)).map(a=>`<div class="kv small"><span>${esc(a.name)}</span><b class="num">${byA[a.id]?fmt0(byA[a.id]):"keine Eingänge"}</b></div>`).join("")+
       `<h3 class="sec">Weitere Eingänge (${ag.ins.length})</h3>`+(ag.ins.length?ag.ins.slice().sort((a,b)=>b.amt-a.amt).map(txRow).join(""):`<p class="muted small">Keine.</p>`)+`<h3 class="sec">Nicht mitgezählt (${ex.length})</h3>`+
@@ -1608,12 +1649,12 @@ function renderSheet(){
     const ag=monthAgg(viewS(),ui.month,cm),list=ag.ins.slice().sort((a,b)=>b.amt-a.amt);
     if(!list.length){hide();return;}
     inner=`<p class="big">Weitere Eingänge</p><p class="muted small">${mLabel(ui.month)}: Rückzahlungen, Beiträge und andere Eingänge. Sie zählen nicht als Einnahmen, aber in Übrig. Ist dein Gehalt dabei, tippe darauf: dann merkt sich die App die Regel und kennt dein Einkommen.</p>`+
-      list.map(t=>`<div class="erow"><button class="line" data-a="incPick" data-h="${esc(t.h)}" aria-label="Das ist mein Gehalt: ${esc((t.p||t.t).slice(0,30))}"><span class="ln"><b>${esc((t.p||t.t).slice(0,34))}</b><small>${dShort(t.d)} · ${esc(accName(t.a))} · Das ist mein Gehalt</small></span><span class="num pos">${fmt(t.amt)}</span></button><button class="btn s" data-a="tx" data-h="${esc(t.h)}" aria-label="Details">…</button></div>`).join("")+
+      list.map(t=>`<div class="erow"><button class="line" data-a="incPick" data-h="${esc(t.h)}" aria-label="Das ist mein Gehalt: ${esc((t.p||t.t).slice(0,30))}"><span class="ln"><b>${esc((t.p||t.t).slice(0,34))}</b><small>${dShort(t.d)} · ${esc(accName(t.a))} · Das ist mein Gehalt</small></span><span class="num pos">${fmt(t.amt)}</span></button><button class="btn s" data-a="tx" data-h="${esc(t.h)}" aria-label="Details">…</button>${flipBtn(t)}</div>`).join("")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else if(sh.t==="umb"){
     const ag=monthAgg(viewS(),ui.month,cm);
     inner=`<p class="big">Umbuchungen (zählen nicht)</p><p class="muted small">${mLabel(ui.month)}: Übertrag zwischen eigenen Konten und Kreditkartenzahlungen. Sie zählen weder als Ausgabe noch als Einnahme, damit nichts doppelt gezählt wird. Tippe auf eine Buchung, um sie zurückzuholen.</p>`+
-      ag.trans.sort((a,b)=>a.d<b.d?1:-1).map(t=>`<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${isCardPay(t)?"Kreditkarte bezahlt · ":"Umbuchung · "}${esc(accName(t.a))} · ${esc((t.t||t.p).slice(0,40))}</span><span class="num">${fmt(t.amt)}</span></button>`).join("")+
+      ag.trans.sort((a,b)=>a.d<b.d?1:-1).map(t=>`<div class="tlw"><button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${isCardPay(t)?"Kreditkarte bezahlt · ":"Umbuchung · "}${esc(accName(t.a))} · ${esc((t.t||t.p).slice(0,40))}</span><span class="num">${fmt(t.amt)}</span></button>${flipBtn(t)}</div>`).join("")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else{
     const txs=(sh.hs||[]).map(h=>S.tx.find(t=>t.h===h)).filter(Boolean);
@@ -1621,6 +1662,7 @@ function renderSheet(){
     const t=txs[0],cur=cm.get(t.h),kw=merchantKey(t);
     inner=`<p class="big">${esc((t.p||t.t||"").slice(0,50))}</p>
    <p class="muted small">${txs.length>1?txs.length+" Buchungen · Summe "+fmt(txs.reduce((s,x)=>s+x.amt,0)):dShort(t.d)+" · "+fmt(t.amt)+" · "+esc(accName(t.a))}<br>${esc((t.t||"").slice(0,120))}</p>
+   ${flipBlock(t)}
    ${cur===TRANSFER?`<p class="status">${isCardPay(t)?"Kreditkarte bezahlt: zählt nicht als Ausgabe, die Einkäufe stehen auf der Kreditkarte. So wird nichts doppelt gezählt.":"Umbuchung zwischen eigenen Konten: zählt weder als Ausgabe noch als Einnahme."}</p><button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Als normale Buchung behandeln</button>`:(t.nt?`<button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Wieder automatisch als Umbuchung erkennen</button>`:"")}
    ${t.man?`<div class="row"><button class="btn s p" data-a="${t.rec?"recEdit":"manEdit"}" data-h="${esc(t.h)}" data-id="${esc(t.rec||"")}">${t.rec?"Dauerposten bearbeiten":"✎ Bearbeiten"}</button></div>`:""}
    <p class="muted small">Falsch einsortiert? Wähle unten die richtige Kategorie.</p>
@@ -1661,6 +1703,7 @@ function vImport(){
     <div class="kv"><span>Summe neu</span><b class="num">${fmt(nw.reduce((s,r)=>s+r.amt,0))}</b></div>
     <div class="kv"><span>davon Eingänge (+)</span><b class="num pos">${nw.filter(r=>r.amt>0).length} · ${fmt0(nw.filter(r=>r.amt>0).reduce((s,r)=>s+r.amt,0))}</b></div><div class="kv"><span>davon Ausgaben (−)</span><b class="num">${nw.filter(r=>r.amt<0).length} · ${fmt0(-nw.filter(r=>r.amt<0).reduce((s,r)=>s+r.amt,0))}</b></div>
     ${nw.length&&!nw.some(r=>r.amt>0)?`<p class="err" role="alert">Keine Eingänge in dieser Datei. Stimmen die Vorzeichen? Dann unten "Vorzeichen umkehren" prüfen.</p>`:""}
+    ${impWarn(I)}
     <label class="chk"><input type="checkbox" data-ch="inv" ${I.inv?"checked":""}> Vorzeichen umkehren (z. B. Amex: Ausgaben positiv)</label>
     ${I.src==="pdf"?`<p class="muted small">Quelle: PDF-Text, heuristisch erkannt. Bitte Vorschau prüfen${I.guess?", bei "+I.guess+" Buchungen wurde das Vorzeichen geschätzt (der Haken unten kehrt alle um)":""}. CSV ist verlässlicher.</p>`:`<p class="muted small">Trenner „${esc(I.a.delim==="\t"?"Tab":I.a.delim)}“ · Spalten: Datum ${I.a.cols.date+1}${I.a.cols.amount!=null?", Betrag "+(I.a.cols.amount+1):""}</p>`}
     ${I.rows.slice(0,5).map(r=>`<div class="tl static"><span class="td">${dShort(r.d)}</span><span class="tt">${esc((r.p+" "+r.t).trim().slice(0,50))}${r.dup?" (Duplikat)":r.maybe?(I.takeMaybe||r.amt>0?" (mögliches Duplikat, wird übernommen)":" (mögliches Duplikat, wird übersprungen)"):""}</span><span class="num ${r.amt>0?"pos":""}">${fmt(r.amt)}</span></div>`).join("")}
@@ -1684,7 +1727,7 @@ function vSettings(){
   h+=D("setup","Einrichtung",`<p class="muted small">Einkommen, feste Kosten und Limits in drei kurzen Schritten festlegen oder jederzeit wiederholen. Bereits vorhandene Werte werden vorausgefüllt und nur geändert, wenn du den Schritt mit "Weiter" bestätigst.</p><button class="btn p w" data-a="wizOpen">Einrichtung ${S.profile.setupDone?"wiederholen":"starten"}</button>`);}
   {const dg=importDiag(S),dl=d=>d.slice(8,10)+"."+d.slice(5,7)+"."+d.slice(2,4);
   h+=D("diag","Import prüfen",`<p class="muted small">Zahlen pro Konto, ohne Texte aus den Buchungen. Fehlen Eingänge oder Ausgaben, stimmen vermutlich die Vorzeichen: Konto löschen, neu importieren und dabei "Vorzeichen umkehren" prüfen.</p>`+
-    (dg.length?dg.map(x=>`<div class="diag"><b>${esc(x.name)}</b><span>${x.n} Buchungen · ${dl(x.min)} bis ${dl(x.max)}</span><span>Saldo der Buchungen: <b>${fmt0(x.pos+x.neg)}</b> · <b class="pos">+${fmt0(x.pos)}</b> (${x.np} Eingänge) · <b>−${fmt0(-x.neg)}</b> (${x.nn} Ausgaben)</span>${x.np===0?`<span class="warnt">⚠ Keine Eingänge: Vorzeichen prüfen</span>`:x.nn===0?`<span class="warnt">⚠ Keine Ausgaben: Vorzeichen prüfen</span>`:""}<label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(x.id)}" ${x.inv?"checked":""}> Vorzeichen beim nächsten Import umkehren</label></div>`).join(""):`<p class="muted small">Noch keine Buchungen.</p>`));}
+    (dg.length?dg.map(x=>`<div class="diag"><b>${esc(x.name)}</b><span>${x.n} Buchungen · ${dl(x.min)} bis ${dl(x.max)}</span><span>Saldo der Buchungen: <b>${fmt0(x.pos+x.neg)}</b> · <b class="pos">+${fmt0(x.pos)}</b> (${x.np} Eingänge) · <b>−${fmt0(-x.neg)}</b> (${x.nn} Ausgaben)</span>${x.np===0?`<span class="warnt">⚠ Keine Eingänge: Vorzeichen prüfen</span>`:x.nn===0?`<span class="warnt">⚠ Keine Ausgaben: Vorzeichen prüfen</span>`:""}<label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(x.id)}" ${x.inv?"checked":""}> Vorzeichen beim nächsten Import umkehren</label>${(()=>{const ms=[...new Set(S.tx.filter(t=>t.a===x.id&&!t.man).map(t=>mkey(t)))].sort().reverse(),op=ms.map(m=>`<option value="${m}">${mLabel(m)}</option>`).join("");return `<p class="muted small">Alle Buchungen dieses Kontos umdrehen (Plus ↔ Minus):</p><div class="fxr"><select id="fr-${esc(x.id)}" aria-label="Bereich"><option value="month">Gewählter Monat (${mLabel(ui.month)})</option><option value="span">Zeitraum von bis</option><option value="all">Ganzes Konto</option></select><select id="ff-${esc(x.id)}" aria-label="von">${op}</select><select id="ft-${esc(x.id)}" aria-label="bis">${op}</select><button class="btn s" data-a="flipRng" data-id="${esc(x.id)}">Umdrehen</button></div>`;})()}</div>`).join(""):`<p class="muted small">Noch keine Buchungen.</p>`));}
   h+=D("recur","Dauerposten ("+S.recur.length+")",`<p class="muted small">Dauerposten rechnen sich ab dem Startdatum in jedem Monat automatisch mit, bis zum Enddatum. Neue legst du mit dem Plus in der Monatsansicht an (Haken "Jeden Monat wiederholen").</p>`+
     (S.recur.length?S.recur.map(r=>`<div class="erow"><span class="rk">⟳ ${esc(r.n)}<br><small class="faint">${fmt(r.amt)} · ${esc(catLabel(r.cat))} · ab ${dl2(r.start)}${r.end?" bis "+dl2(r.end):""}</small></span><button class="btn s" data-a="recEdit" data-id="${esc(r.id)}">Bearbeiten</button><button class="btn s dang" data-a="recDel" data-id="${esc(r.id)}" aria-label="${esc(r.n)} löschen">×</button></div>`).join(""):`<p class="muted small">Noch keine Dauerposten.</p>`)+`<button class="btn w" data-a="addOpen">Neue Buchung oder Dauerposten</button>`);
   h+=D("reset","Neu aufsetzen",`<p class="muted small">Löscht alle <b>importierten</b> Buchungen (${S.tx.filter(t=>!t.man).length}). Konten, Kategorien, Regeln, Plan, feste Kosten, Profil, Tresor, manuelle Buchungen und Dauerposten bleiben. Danach alle Konten für denselben Zeitraum neu laden.</p><button class="btn w" data-a="reapply">Regeln neu anwenden</button><p class="muted small">Berechnet alle Zuordnungen neu, die aus Regeln stammen. Einzeln gesetzte Zuordnungen und manuelle Buchungen bleiben. Hilfreich, wenn Buchungen falsch einsortiert wurden.</p><button class="btn w dang" data-a="wipeTx">Nur Buchungen löschen (Einstellungen behalten)</button>`);
@@ -1721,17 +1764,25 @@ function vSettings(){
     (sy?`<button class="btn w" data-a="syNow">Jetzt synchronisieren</button><button class="btn w" data-a="syOff">Sync trennen</button>`:
     `<label class="fld">Sync-Passphrase<input type="password" id="syPass" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
      <button class="btn p w" data-a="syNew">Sync einrichten</button><button class="btn w" data-a="syJoin">Mit bestehender Passphrase verbinden</button>`));
-  h+=`<p class="muted small cen">Finanzplaner v10 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
+  h+=`<p class="muted small cen">Finanzplaner v11 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
   return h;
 }
 
 /* ---------- Import-Ablauf ---------- */
+function impWarn(I){
+  const acc=S.accounts.find(a=>a.id===I.acc)||{},n=I.rows.length;let h="";
+  const box=(t,b)=>`<div class="status warnbox" role="alert"><b>${t}</b> ${b}</div>`;
+  if(n>=10&&!acc.posOk){const sh=I.rows.filter(r=>r.amt>0).length/n;if(sh>=0.8)h+=box("Bei diesem Konto sind "+Math.round(sh*100)+" % der Beträge positiv.",`Ist das richtig? <div class="row"><button class="btn s p" data-a="posOk">Ja, stimmt</button><button class="btn s" data-a="posInv">Umkehren</button></div>`);}
+  if(I.sc&&I.sc.suggestInv)h+=box("Die Saldo-Spalte passt nur mit umgekehrten Vorzeichen",`(${I.sc.inv} von ${I.sc.n} Zeilen). <div class="row"><button class="btn s p" data-a="posInv">Umkehren</button></div>`);
+  if(I.conf&&I.conf.n>=5&&I.conf.bad/I.conf.n>=0.7)h+=box("Typ-/Buchungstext und Vorzeichen passen nicht zusammen",`(${I.conf.bad} von ${I.conf.n} Zeilen). <div class="row"><button class="btn s p" data-a="posInv">Umkehren</button></div>`);
+  return h;
+}
 const impNew=I=>takeRows(I.rows,I.takeMaybe);
 function impBuild(a){
   const I=ui.imp,acc=S.accounts.find(x=>x.id===I.acc),inv=!!acc.inv;
   I.a=a;I.inv=inv;
   const ex=extractRows(a,{inv});assignHashes(ex.rows,acc.id);
-  markDups(S,ex.rows,acc.id);I.takeMaybe=false;
+  markDups(S,ex.rows,acc.id);I.takeMaybe=false;I.sc=signCheck(ex.rows);I.conf=ex.conf;
   I.rows=ex.rows;I.skipped=ex.skipped;I.stage="prev";I.msg="";
   if(!ex.rows.length){I.stage="in";I.msg="Keine lesbaren Buchungen gefunden. Prüfe Datei und Konto.";}
   render();
@@ -1786,7 +1837,7 @@ function impBuildPdf(){
   const fl=I.flips||new Set(),rows=res.rows.map((r,i)=>({d:r.d,amt:(acc.inv?-r.amt:r.amt)*(fl.has(i)?-1:1),p:r.p,t:r.t,guess:r.guess,conf:r.conf}));
   assignHashes(rows,acc.id);
   markDups(S,rows,acc.id);rows.forEach((r,i)=>{r.o=i;});I.takeMaybe=false;
-  Object.assign(I,{src:"pdf",rows,skipped:0,unrec:res.unrec,guess:rows.filter(r=>r.guess).length,inv:!!acc.inv,stage:"prev",msg:"",busy:""});
+  Object.assign(I,{sc:null,conf:null,src:"pdf",rows,skipped:0,unrec:res.unrec,guess:rows.filter(r=>r.guess).length,inv:!!acc.inv,stage:"prev",msg:"",busy:""});
   render();
 }
 function impLoad(text){
@@ -1814,6 +1865,23 @@ function impCommit(){
 
 /* ---------- Aktionen (Klicks) ---------- */
 const ACT={
+  flip:el=>{const t=S.tx.find(x=>x.h===el.dataset.h);if(!t)return;if(t.rec){toast("Dauerposten bitte unter Mehr ändern");return;}mutate(()=>{flipTx(t);});toast(t.fl?"Vorzeichen umgedreht":"Original wiederhergestellt");},
+  flipGrp:el=>{
+    const t=S.tx.find(x=>x.h===el.dataset.h);if(!t)return;const list=flipGroup(S,t);
+    if(!confirm((t.fl?"Umdrehung rückgängig machen":"Plus/Minus umdrehen")+" bei "+list.length+" Buchungen dieses Händlers (gleiches Konto)?"))return;
+    mutate(()=>{for(const x of list)flipTx(x);});toast(list.length+" Buchungen geändert");
+  },
+  flipRng:el=>{
+    const id=el.dataset.id,mode=($("#fr-"+id)||{}).value||"all";let from="",to="";
+    if(mode==="month")from=to=ui.month;else if(mode==="span"){from=($("#ff-"+id)||{}).value||"";to=($("#ft-"+id)||{}).value||"";if(from&&to&&from>to){const x=from;from=to;to=x;}}
+    const list=flipRangeList(S,id,from,to);
+    if(!list.length){toast("Keine Buchungen in diesem Bereich");return;}
+    const lab=mode==="month"?mLabel(ui.month):mode==="span"?(from?mLabel(from):"Anfang")+" bis "+(to?mLabel(to):"Ende"):"ganzes Konto";
+    if(!confirm("Bei "+list.length+" Buchungen von "+accName(id)+" ("+lab+") Plus und Minus umdrehen? Doppelt ausgeführt stellt es das Original wieder her."))return;
+    mutate(()=>{for(const x of list)flipTx(x);});toast(list.length+" Buchungen geändert");
+  },
+  posOk:()=>{const a=S.accounts.find(x=>x.id===ui.imp.acc);if(a){a.posOk=true;a.u=Date.now();}save();render();},
+  posInv:()=>{const I=ui.imp,a=S.accounts.find(x=>x.id===I.acc);if(!a)return;a.inv=!a.inv;a.u=Date.now();save();if(I.src==="pdf")impBuildPdf();else impBuild(I.a);},
   reapply:()=>{
     if(!confirm("Regeln neu anwenden?\n\nAlle Zuordnungen, die aus Regeln stammen, werden neu berechnet. Einzeln von dir gesetzte Zuordnungen und manuelle Buchungen bleiben."))return;
     let n=0;mutate(()=>{n=reapplyRules(S);applyRentMonths(S,resolveAll(S));},false);toast(n+" Zuordnungen neu berechnet");

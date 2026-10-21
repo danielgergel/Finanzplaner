@@ -3,7 +3,7 @@
 Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics, keine Drittanbieter-Skripte außer Firebase (gstatic) und Google Fonts.
 
 ## Deployment
-Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v10`) lädt Netz zuerst (3 s), dann Cache.
+Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v11`) lädt Netz zuerst (3 s), dann Cache.
 
 ## CSV-Import
 Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfen (neu/Duplikate), übernehmen.
@@ -41,7 +41,7 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v10` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v11` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
@@ -119,3 +119,14 @@ Das Kreisdiagramm steht direkt unter der Zusammenfassung der Monatsansicht (Kont
 - **Fixkosten pro Monat:** Je Händler/Empfänger und Betrag (±10 %) zu Posten zusammengefasst. Betrag = zuletzt gebuchter regelmäßiger Betrag, Einmalzahlungen bleiben außen vor. Mehrere feste Zahlungen (z. B. Abos) sind mehrere Posten, die Summe stimmt mit den Posten überein. Fixkosten, die über eigene Konten laufen, stehen unter Ø pro Monat als "Auf andere eigene Konten verschoben" (zählt nicht als Ausgabe).
 - **Duplikate:** Wörter wie Debitkartenumsatz, Visa, Kartenzahlung, Vom zählen nie als Händler; gleicher Betrag und Datum bei anderem Händler ist kein Duplikat.
 - **Reparatur:** Beim ersten Start von v10 werden alle aus Regeln stammenden Zuordnungen einmalig neu berechnet (einzeln gesetzte Zuordnungen bleiben), die alten Teilstring-Standardregeln werden durch die neuen ersetzt, eigene Regeln bleiben vorn. "Regeln neu anwenden" unter Mehr bleibt. Schema 6, additiv und idempotent.
+
+## Version 11: Plus und Minus manuell umdrehen
+
+So drehst du Plus/Minus um:
+1. Neben jeder Buchung (Kategorie-Detail, Einnahmen, Weitere Eingänge, Ausgaben, Sortieren, Umbuchungen) steht ein Knopf "±". Ein Tipp dreht die Buchung um, nochmal tippen stellt das Original wieder her.
+2. In der Buchung selbst: "± Plus/Minus umdrehen" und "Alle Buchungen dieses Händlers umdrehen (n)" (mit Rückfrage und Anzahl).
+3. Ganzes Konto: Mehr, Konten/Import prüfen, beim Konto Bereich wählen (gewählter Monat, Zeitraum, ganzes Konto), "Umdrehen", Rückfrage mit Anzahl bestätigen.
+4. Beim Import warnt die App, wenn bei einem Konto fast alles positiv ist ("Ist das richtig?" mit "Ja, stimmt" oder "Umkehren"), wenn die Saldo-Spalte nur mit umgekehrten Vorzeichen passt oder wenn Buchungstext/Typ (z. B. Lastschrift) und Vorzeichen nicht zusammenpassen.
+5. Eine einzeln gesetzte Kategorie bleibt beim Umdrehen; automatische Zuordnungen (Gehalt, Miete, Regeln) werden neu berechnet.
+
+Technik: Felder `fl` (umgedreht), `oa` (Originalbetrag), `pc` (vorherige automatische Kategorie), `u` für den Sync-Abgleich; Schema bleibt 6 (nur zusätzliche Felder, ältere App-Versionen sehen einfach den umgedrehten Betrag). Re-Import: gleicher Hash, wird als Duplikat erkannt (mit Originalvorzeichen), die Umdrehung bleibt. Dauerposten sind ausgenommen. Neu erkannt: Spalte "Sender / Empfänger" als Gegenüber, "Buchungstext"/"Type" zur Plausibilitätsprüfung, Typ-Wörter Soll/Haben/Debit/Credit. Tests: `test_v11.js` (40 Prüfungen) und Browser-Test (Cache `finanzplaner-v11`).
