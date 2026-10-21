@@ -1,5 +1,5 @@
 /* Service Worker für den Finanzplaner: App und Bibliotheken werden zwischengespeichert, damit sie auch ohne Internet starten. */
-const V="finanzplaner-v8";
+const V="finanzplaner-v10";
 const CORE=["./","index.html","apple-touch-icon.png"];
 self.addEventListener("install",e=>{
   e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));

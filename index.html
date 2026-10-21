@@ -222,6 +222,8 @@ svg.donut .dtot.sm{font-size:20px}
 .bt .dot{margin:0}
 body.hasnav{padding-block-end:calc(170px + env(safe-area-inset-bottom,0px))}
 
+.warnrow{padding-left:14px;font-size:14px}
+
 </style></head><body>
 <div class="wrap">
 <header><div class="hin"><h1 id="ttl">Finanzplaner</h1>
@@ -232,35 +234,47 @@ body.hasnav{padding-block-end:calc(170px + env(safe-area-inset-bottom,0px))}
 <script>
 /* ===== KERN: Parser, Kategorien, Auswertung, Krypto, Merge (ohne DOM) ===== */
 const TRANSFER="Eigene Überträge", INCOME="Einkommen", UNSORTED="Zu sortieren";
-const norm=s=>String(s==null?"":s).toUpperCase().replace(/Ä/g,"AE").replace(/Ö/g,"OE").replace(/Ü/g,"UE").replace(/ß/g,"SS").replace(/\s+/g," ").trim();
+const norm=s=>String(s==null?"":s).toUpperCase().replace(/Ä/g,"AE").replace(/Ö/g,"OE").replace(/Ü/g,"UE").replace(/ß/g,"SS").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
 
 /* ---------- Standarddaten ---------- */
-const DEF_CATS=["Einkommen","Eigene Überträge","Miete","Lebensmittel","Drogerie","Tanken","Online-Shopping","Essen gehen","Abos","Versicherungen","Handy/Internet","Trading","Sparen","Rücklagen","Weiterbildung","Friseur","GEZ/Rundfunk","Reisen","Freizeit","Bekleidung","Sonstiges"];
-/* ^ = Wortanfang, $ = Wortende, sonst Teilstring (nach Normalisierung Ä->AE usw.). Reihenfolge = Priorität. */
+const DEF_CATS=["Einkommen","Eigene Überträge","Miete","Lebensmittel","Drogerie","Tanken","Online-Shopping","Essen gehen","Abos","Versicherungen","Handy/Internet","Trading","Sparen","Rücklagen","Weiterbildung","Friseur","GEZ/Rundfunk","Reisen","Freizeit","Bekleidung","Sonstiges","Strom & Nebenkosten","Bargeld","Auto/Parken","Gesundheit","ÖPNV/Bahn"];
+/* Standardregeln, geordnet nach Spezifitaet (erste passende zaehlt).
+   Schluessel arbeiten auf WOERTERN (Gross/Klein, Umlaute und Satzzeichen normalisiert), nie auf Teilstrings.
+   "A|B" Alternativen, "A B" Wortfolge, "A+B" beide Woerter irgendwo, "WORT!AUS1!AUS2" nicht, wenn AUS1/AUS2 vorkommt,
+   "*ENDE" / "ANFANG*" / "*MITTE*" Wortteil nur bei zusammengesetzten deutschen Woertern. Optionen: pos, neg, min (Betrag). */
 const DEF_RULES=[
-["Rücklagen","RUECKLAGE"],
-["Sparen","SAMMELUEBERWEISUNG|^ETF$|BAUSPAR|SCALABLE|COMDIRECT|SPARPLAN|WERTPAPIER"],
-["Eigene Überträge","UEBERTRAG|UMBUCHUNG|ZAHLUNG ERHALTEN|TOP-UP|TOPUP|AMERICAN EXPRESS|^AMEX|AEME|KREDITKARTENABRECHNUNG|KREDITKARTE ABRECHNUNG|ZAHLUNG REVOLUT|REVOLUT BANK|REVOLUT LTD|REVOLUT TOP|^REVOLUT$|^REVOLUT BANK"],
-["Einkommen","GEHALT|^LOHN|BESOLDUNG|BEZUEGE|ARBEITGEBER|LOHN/GEHALT"],
-["Trading","APEXFUTURES|APEX FUTURES|TAKEPROFIT|TAKE PROFIT|TOPSTEP|TRADERVUE|^ATAS$|TRADE REPUBLIC|TRADEREPUBLIC|APEXTRADER|APEX TRADER|TRADEIFY|^WHOP|FUNDEDNEXT|FTMO|FUNDINGPIPS|BULENOX|^LUCID|ELITE TRADER|MYFUNDED|ALPHA FUTURES|TRADOVATE|NINJATRADER|TRADINGVIEW|FUNDED FUTURES|TRADEDAY"],
-["Miete","MIETE|STADTWERKE|ENBW|VATTENFALL|ENTEGA|^EON|E.ON|NEBENKOSTEN|HAUSVERWALTUNG|WOHNUNGSBAU|VONOVIA|^EWE |BADENOVA|WASSERVERSORGUNG|MUELLABFUHR|ABFALL"],
-["Lebensmittel","REWE|EDEKA|ALDI|LIDL|KAUFLAND|PENNY|NETTO MARKEN|BAECKEREI|NORMA|^DENNS|BIOMARKT|ALNATURA|TEGUT|GLOBUS|MARKTKAUF|BAECKER|BACKWERK|BACKSHOP|BREZEL|METZGER|FLEISCHEREI|KIOSK|GETRAENKE|EDEKA|HIT MARKT|NAHKAUF|NAH UND GUT|SPAR MARKT|LEBENSMITTEL|MERCADONA|CARREFOUR|LECLERC|AUCHAN|TESCO|CONAD|^SPAR$|LIDL"],
-["Drogerie","^DM$|ROSSMANN|APOTHEKE|MUELLER DROGERIE|MÜLLER DROGERIE|SANITAETSHAUS"],
-["Tanken","SHELL|^ARAL$|^ESSO$|^JET$|^TOTAL$|TOTALENERGIES|^AVIA$|^HEM$|TANKSTELLE|^BFT|AGIP|^OMV|ORLEN|AUTOHOF|RASTHOF|^STAR TANK|SB TANK|HOYER|^ENI |TAMOIL|PARKHAUS|PARKEN|PARKSCHEIN|WASCHPARK|AUTOWASCH|LADESTATION|ENBW MOBILITY"],
-["Abos","NETFLIX|SPOTIFY|DAZN|PLAYSTATION|ICLOUD|ANTHROPIC|CLAUDE|KINGSIZE|APPLE.COM/BILL|SONY INTERACTIVE|DISNEY|PRIME VIDEO|AMAZON PRIME|YOUTUBE|GOOGLE ONE|GOOGLE STORAGE|TWITCH|AUDIBLE|DEEZER|WAIPU|^SKY |RTL\+|PARAMOUNT|CRUNCHYROLL|DUOLINGO|OPENAI|CHATGPT|MICROSOFT 365|DROPBOX|NORDVPN|PATREON|APPLE.COM|CANVA|ADOBE|NOTION|GITHUB|JETBRAINS|ZOOM"],
-["Online-Shopping","AMAZON|EBAY|ZALANDO|ABOUT YOU|^OTTO |SHEIN|TEMU|ALIEXPRESS|KLEINANZEIGEN|VINTED|MEDIAMARKT|SATURN|CYBERPORT|NOTEBOOKSBILLIGER|GALAXUS|IKEA|HORNBACH|^OBI|BAUHAUS|TOOM|HAGEBAU|DECATHLON|BOOKS|THALIA|HUGENDUBEL"],
-["Essen gehen","MCDONALD|BURGER KING|LIEFERANDO|^WOLT|RESTAURANT|CAFE|STARBUCKS|PIZZ|DOENER|IMBISS|BISTRO|SUBWAY|EUREST|KANTINE|MENSA|SODEXO|COMPASS GROUP|CAFETERIA|BURGER|KFC|DOMINO|VAPIANO|SUSHI|THAI|ITALIEN|GRILL|KEBAB|BIERGARTEN|WIRTSHAUS|GASTST|DELIVEROO|UBER EATS|NORDSEE|OSTERIA|TRATTORIA|BRAUHAUS|ALTE BRAUEREI|SNACK|PIZZERIA|DONER|DÖNER|LA CASA|ASIA|BOWL|FRISCH BACKEN|MCDONALD|BAR&"],
-["Versicherungen","VERSICHERUNG|ADAC|^HUK|ALLIANZ|DEVK|^HDI$|CHECK24|NUERNBERGER|GOTHAER|AXA|DEBEKA|SIGNAL IDUNA|BARMER|TECHNIKER KRANKEN|^AOK|KRANKENKASSE|DAK GESUND|IDEAL VERS|GENERALI|CONCORDIA|WGV|HUK-COBURG|HUK COBURG|KFZ-VERS|LVM"],
-["Handy/Internet","TELEKOM|VODAFONE|^O2$|1UND1|1&1|FREENET|TELEFONICA|CONGSTAR|MOBILCOM|DEUTSCHE GLASFASER|SIMYO|LEBARA|PYUR|UNITYMEDIA|KABEL DEUTSCHLAND|FRAENK|NETZCLUB|WINSIM|SIM.DE"],
-["Weiterbildung","KLETT|^ILS$|FERNSCHULE|UDEMY|COURSERA|SKILLSHARE|SEMINAR|FORTBILDUNG|UNIVERSITAET|HOCHSCHULE|VOLKSHOCHSCHULE"],
-["Friseur","FRISEUR|BARBER|HAIR|COIFFEUR|KOSMETIK|NAGELSTUDIO|BARBERSHOP"],
-["GEZ/Rundfunk","^GEZ$|RUNDFUNK|BEITRAGSSERVICE|ARD ZDF"],
-["Reisen","BOOKING|AIRBNB|FLUG|LUFTHANSA|RYANAIR|HOTEL|DB VERTRIEB|DEUTSCHE BAHN|FLIXBUS|EASYJET|EUROWINGS|CONDOR|^TUI |SIXT|EUROPCAR|HERTZ|HOSTEL|EXPEDIA|TRIVAGO|PAYMENTS LUXEMBO|LUFTHANSA|RYANAIR|AIRLINE"],
-["Bekleidung","NIKE|ADIDAS|H&M|ZARA|PRIMARK|C&A|PEEK|^JACK|SPORT SCHECK|TITUS|ZUMIEZ|FOOTLOCKER|DEICHMANN|VERO MODA|TOMMY|BERSHKA|TK MAXX|ESPRIT|S.OLIVER|MANGO|UNIQLO|JACK&JONES|JACK JONES|PULL&BEAR|SNIPES|SIZEER"],
-["Sonstiges","ENTGELT|KONTOFUEHRUNG|GEBUEHR|KREDITKARTENGEBUEHR|DHL|^POST |HERMES|DPD|^UPS$|BAHN|^KVV|^VRR|^MVG|^BVG|^RMV|^HVV|^VGN|NAHVERKEHR|TICKETSHOP|^UBER|^BOLT|FREENOW|FLINKSTER|SHARENOW|^TIER$|^LIME$|^BIRD$|REPARATUR|WERKSTATT|TUEV|DEKRA|^ATU$|PEARL|^DOTT|COPECART|GELDAUTOMAT|BARGELDAUSZAHLUNG|^SPARKASSE|^VOLKSBANK|^RAIFFEISEN|^COMMERZBANK|^DEUTSCHE BANK|^POSTBANK|^BBBANK|^PSD BANK|WESTERWALD BANK|^VR BANK|^SPARDA-B"],
-["Freizeit","^KART$|KARTBAHN|KARTING|^KINO|^GYM$|FITNESS|MCFIT|STEAM|URBAN SPORTS|FITX|CLEVER FIT|FITSTAR|JOHN REED|SPORTWELT|SCHWIMMBAD|THERME|FREIZEITPARK|^ZOO$|THEATER|KONZERT|EVENTIM|TICKETMASTER|BOWLING|ESCAPE|STEAM|EPIC GAMES|NINTENDO|PLAYSTATION STORE|GAMES|GOLF|TENNIS|KLETTERN|BOULDER|SAUNA|CINEMAXX|CINESTAR|UCI KINO|FILMPALAST|CINEORDER|^CINEPLEX|KINOPOLIS"]
+["Rücklagen","RUECKLAGE|RUECKLAGEN"],
+["Eigene Überträge","PAYPAL INSTANT TRANSFER|INSTANT TRANSFER|AUSZAHLUNG PAYPAL|UEBERWEISUNG VON PAYPAL|PAYPAL AUSZAHLUNG"],
+["Sparen","SAMMELUEBERWEISUNG|ETF|BAUSPAR*|SCALABLE|COMDIRECT|SPARPLAN*|WERTPAPIER*|TRADE REPUBLIC|TRADEREPUBLIC"],
+["Eigene Überträge","UEBERTRAG|UEBERTRAGUNG|UMBUCHUNG*|ZAHLUNG ERHALTEN|TOP UP|TOPUP|AMERICAN EXPRESS|AMEX|AEME|KREDITKARTENABRECHNUNG|KREDITKARTE ABRECHNUNG|ZAHLUNG REVOLUT|REVOLUT"],
+["Einkommen","GEHALT*|LOHN|BEZUEGE|BESOLDUNG|ARBEITGEBER",{pos:1,min:500}],
+["Einkommen","KINDERGELD|RENTE|DEUTSCHE RENTENVERSICHERUNG|BAFOEG|BAFOG|AFBG|L BANK|STEUERERSTATTUNG|FINANZAMT|FOERDERUNG*|ELTERNGELD|ARBEITSAGENTUR|BUNDESAGENTUR",{pos:1}],
+["Trading","APEXTRADERFUNDING|APEXFUTURES|APEX FUTURES|APEX TRADER|APEX|TAKEPROFIT*|TAKE PROFIT|TOPSTEP*|TRADEIFY|FTMO|WHOP|FUNDINGPIPS|FUNDEDNEXT|BULENOX|LUCID TRADING|LUCIDTRADING|ELITE TRADER FUNDING|MYFUNDEDFX|MYFUNDEDFUTURES|ALPHA FUTURES|TRADOVATE|NINJATRADER|TRADINGVIEW|ATAS|TRADERVUE|FUNDED FUTURES|TRADEDAY|FUNDINGTICKS|FUNDINGTRADERS"],
+["Miete","MIETE|KALTMIETE|WARMMIETE|MIETZAHLUNG*|HAUSVERWALTUNG*|VERMIETER*|WOHNUNGSMIETE"],
+["Auto/Parken","PARKHAUS*|PARKSERVICE*|PARKEN|PARKSCHEIN*|PARKGEBUEHR*|CONTIPARK|APCOA|PARKING|AUTOWAESCHE|AUTOWASCH*|WASCHPARK|WASCHANLAGE*|LADESTATION*|IONITY|FASTNED|ALLEGO|TESLA SUPERCHARGER|SUPERCHARGER|ENBW MOBILITY|WERKSTATT*|TUEV|DEKRA|ATU|REIFEN*|KFZ|AUTOHAUS*|AUTOTEILE*"],
+["Strom & Nebenkosten","STROM|GAS|WASSER|STADTWERKE*|ENBW|VATTENFALL|ENTEGA|EON|E ON|EWE|BADENOVA|WASSERVERSORGUNG*|MUELLABFUHR|ABFALL*|NEBENKOSTEN|ABSCHLAG|ENERGIE*|FERNWAERME|HEIZKOSTEN|GRUNDSTEUER"],
+["Tanken","SHELL!BEACH!BAR!COCKTAIL|ARAL|ESSO|JET|TOTALENERGIES|TOTAL ENERGIES|TOTAL TANKSTELLE|TOTAL STATION|TOTAL AUTOHOF|TOTAL!MIETWAGEN!RENT!CAR!AUTOVERMIETUNG!SIXT!HERTZ!EUROPCAR!AVIS|AVIA|HEM|AGIP|ENI|OMV|TAMOIL|BFT|STAR TANK|STAR STATION|STAR TANKSTELLE|SPRINT|MARKANT|RAIFFEISEN!MARKT!BANK!BAUMARKT!VOLKSBANK!LAGERHAUS|ALLGUTH|Q1|Q8|BP|ORLEN|HOYER|REPSOL|CEPSA|GALP|MOEVE|SUNOCO|MAXXIM|CALPAM|CLASSIC TANKSTELLE|CLASSIC STATION|ROSSNAGEL|EBERHARDT|OIL|TANKSTELLE*|TANKCENTER|TANK CENTER|TANKAUTOMAT*|SB TANK|SBTANK|SB TANKSTELLE|AUTOHOF*|RASTHOF*|RASTANLAGE*|TANK RAST|GASOLINERA*|ESTACION DE SERVICIO|ESTACION SERVICIO|ESTACIO DE SERVEI|CARBURANT*|STATION SERVICE|STATION ESSENCE|GLOBUS TANKSTELLE|KAUFLAND TANKSTELLE|LECLERC STATION|GLOBUS STATION|KAUFLAND STATION"],
+["Bargeld","GELDAUTOMAT*|BARGELDAUSZAHLUNG*|BARAUSZAHLUNG*|CASH ADVANCE|ATM|SPARKASSE+DEBITKARTENUMSATZ|VOLKSBANK+DEBITKARTENUMSATZ|RAIFFEISENBANK+DEBITKARTENUMSATZ|SPARDA+DEBITKARTENUMSATZ|WESTERWALD+DEBITKARTENUMSATZ|COMMERZBANK+DEBITKARTENUMSATZ|DEUTSCHE BANK+DEBITKARTENUMSATZ|POSTBANK+DEBITKARTENUMSATZ|VR BANK+DEBITKARTENUMSATZ|BBBANK+DEBITKARTENUMSATZ|PSD BANK+DEBITKARTENUMSATZ|TARGOBANK+DEBITKARTENUMSATZ|HYPOVEREINSBANK+DEBITKARTENUMSATZ",{neg:1}],
+["Gesundheit","ZAHN*|ARZT|AERZTE*|PRAXIS|APOTHEKE*|OPTIKER*|OPTIK|PHYSIO*|KRANKENHAUS|KLINIK*|HEILPRAKTIKER*|ORTHOPAED*|AUGENARZT|HAUTARZT|FRAUENARZT|LABOR|SANITAETSHAUS|MEDIZIN*|ZAHNKLINIK|ZAHNMEDIZIN*"],
+["Essen gehen","MCDONALD*|BURGER KING|BURGER*|KFC|SUBWAY|STARBUCKS|LIEFERANDO|WOLT|DELIVEROO|UBER EATS|EUREST|KANTINE*|MENSA|STUDENTENWERK*|SODEXO|COMPASS GROUP|CAFETERIA*|CAFE|COFFEE*|KEBAP*|KEBAB*|DOENER*|DONER*|EISCAFE*|EIS CAFE|GASTRO*|GELATERIA|TAPAS|KNEIPE*|BISTRO*|SCHNITZELHAUS|PIZZ*|PIZZERIA*|RESTAURANT*|RISTORANTE*|TRATTORIA|OSTERIA|IMBISS*|GRILL*|SUSHI*|THAI|VAPIANO|NORDSEE|BRAUHAUS*|WIRTSHAUS*|GASTSTAETTE*|GASTHOF*|BIERGARTEN*|DOMINO*|BRASSERIE|EISDIELE*|CREPERIE"],
+["ÖPNV/Bahn","DEUTSCHE BAHN|DB VERTRIEB|DB AUTOMAT|DB FERNVERKEHR|DB REGIO|BAHN|FLIXBUS|DOTT|LIME|BOLT|NAHVERKEHR*|TAXI*|UBER|FREENOW|KVV|VRR|MVG|BVG|RMV|HVV|VGN|VVS|SBB|OEBB|SNCF|TRENITALIA|EUROSTAR|DEUTSCHLANDTICKET|DEUTSCHLAND TICKET|MOBILITAET*|TIER|BIRD|SHARENOW|FLINKSTER|NEXTBIKE|CALL A BIKE|VOI"],
+["Lebensmittel","REWE|EDEKA|ALDI|LIDL|KAUFLAND|PENNY|NETTO|NORMA|DENNS|BIOMARKT*|ALNATURA|TEGUT|GLOBUS|MARKTKAUF|NAHKAUF|NAH UND GUT|SPAR|MERCADONA|CARREFOUR|LECLERC|AUCHAN|TESCO|CONAD|COOP|MIGROS|BAECKER*|BAECKEREI*|BACKWERK|BACKSHOP|BREZEL*|METZGER*|FLEISCHEREI*|KIOSK|GETRAENKE*|LEBENSMITTEL*|SUPERMARKT*|SUPERMERCADO*|SUPERMERCAT*|ALIMENTATION|EPICERIE|BOULANGERIE|PANADERIA|HOFLADEN|WOCHENMARKT"],
+["Drogerie","DM|DROGERIE*|ROSSMANN|MUELLER DROGERIE|MUELLER DROGERIEMARKT|BUDNI|LUSH|RITUALS|FARMACIA*|TEDI|PARFUEMERIE*|DOUGLAS|FLACONI"],
+["Abos","NETFLIX|SPOTIFY|DAZN|PLAYSTATION|SONY INTERACTIVE|ICLOUD|ANTHROPIC|CLAUDE|KINGSIZE|DISNEY|PRIME VIDEO|AMAZON PRIME|YOUTUBE|GOOGLE ONE|GOOGLE STORAGE|TWITCH|AUDIBLE|DEEZER|WAIPU|SKY|PARAMOUNT|CRUNCHYROLL|DUOLINGO|OPENAI|CHATGPT|MICROSOFT 365|DROPBOX|NORDVPN|PATREON|APPLE COM BILL|CANVA|ADOBE|NOTION|GITHUB|JETBRAINS|ZOOM"],
+["Online-Shopping","AMAZON|EBAY|ZALANDO|ABOUT YOU|OTTO|SHEIN|TEMU|ALIEXPRESS|KLEINANZEIGEN|VINTED|MEDIAMARKT|SATURN|CYBERPORT|NOTEBOOKSBILLIGER|GALAXUS|IKEA|HORNBACH|BAUHAUS|TOOM|HAGEBAU|OBI|DECATHLON|BOOKS|THALIA|HUGENDUBEL|COMTRADA|BUHL DATA|BUHL|SOFTWARE*|ALTERNATE|CONRAD|REICHELT"],
+["Bekleidung","NIKE|ADIDAS|H M HENNES|H M MAURITZ|H M MODE|H M STORE|H M FILIALE|H M ONLINE|ZARA|PRIMARK|C A MODE|C A FILIALE|C A DEUTSCHLAND|C A ONLINE|PEEK CLOPPENBURG|PEEK|JACK|SPORT SCHECK|TITUS|ZUMIEZ|FOOTLOCKER|DEICHMANN|VERO MODA|TOMMY|BERSHKA|TK MAXX|ESPRIT|S OLIVER|MANGO|UNIQLO|PULL BEAR|SNIPES|STRADIVARIUS|MASSIMO DUTTI|ONLY SONS"],
+["Versicherungen","*VERSICHERUNG*|HAFTPFLICHT*|CHECK24|NUERNBERGER|GOTHAER|AXA|DEBEKA|SIGNAL IDUNA|BARMER|TECHNIKER KRANKENKASSE|AOK|KRANKENKASSE*|DAK GESUND|GENERALI|CONCORDIA|WGV|HUK COBURG|HUK|ADAC|ALLIANZ|DEVK|HDI|LVM"],
+["Handy/Internet","TELEKOM|VODAFONE|O2|1UND1|FREENET|TELEFONICA|CONGSTAR|MOBILCOM|DEUTSCHE GLASFASER|SIMYO|LEBARA|PYUR|UNITYMEDIA|KABEL DEUTSCHLAND|FRAENK|NETZCLUB|WINSIM|CALLYA|IONOS"],
+["Weiterbildung","KLETT|ILS|FERNSCHULE*|UDEMY|COURSERA|SKILLSHARE|SEMINAR*|FORTBILDUNG*|UNIVERSITAET*|HOCHSCHULE*|VOLKSHOCHSCHULE*|COPECART|COPE CART"],
+["Friseur","FRISEUR*|COIFFEUR|BARBER*|KOSMETIK*|NAGELSTUDIO|HAIR"],
+["GEZ/Rundfunk","GEZ|RUNDFUNK*|BEITRAGSSERVICE|ARD ZDF"],
+["Reisen","BOOKING|AIRBNB*|FLUG*|FLUEGE|LUFTHANSA|RYANAIR|EASYJET|EUROWINGS|CONDOR|TUI|SIXT|EUROPCAR|HERTZ|AVIS|HOSTEL*|*HOTEL*|EXPEDIA|TRIVAGO|AIRLINE*|MIETWAGEN*|FERIENWOHNUNG*|CAMPING*|URLAUB*"],
+["Freizeit","KARTBAHN|KARTING|KART|KINO*|CINEMAXX|CINESTAR|UCI|FILMPALAST|CINEORDER|CINEPLEX|KINOPOLIS|GYM|FITNESS*|MCFIT|URBAN SPORTS|FITX|CLEVER FIT|FITSTAR|JOHN REED|SPORTWELT|SCHWIMMBAD*|THERME*|FREIZEITPARK*|ZOO|THEATER*|KONZERT*|EVENTIM|TICKETMASTER|BOWLING|ESCAPE|STEAM|EPIC GAMES|NINTENDO|GAMES|GOLF|TENNIS|KLETTERN|BOULDER*|SAUNA*"],
+["Sonstiges","ENTGELT|GEBUEHR*|KONTOFUEHRUNG*|KREDITKARTENGEBUEHR|DHL|POST|HERMES|DPD|UPS|REPARATUR*|COPYSHOP|COPYCART"],
+["Online-Shopping","PAYPAL",{neg:1}]
 ];
-const expandRules=()=>{const o=[];for(const [c,ks] of DEF_RULES)for(const k of ks.split("|"))o.push({k,c});return o;};
+const expandRules=()=>{const o=[];for(const [c,ks,opt] of DEF_RULES)for(const k of ks.split("|")){const r={k,c};if(opt){if(opt.pos)r.pos=1;if(opt.neg)r.neg=1;if(opt.min)r.min=opt.min;}o.push(r);}return o;};
+const DEFKEYS=new Set(expandRules().map(r=>norm(r.k)+"|"+r.c));
 const DEF_BUDGET={
   income:null, planIncome:3100, mode:"plan", g:90, r:100,
   items:[
@@ -280,6 +294,11 @@ const DEF_BUDGET={
     {n:"Friseur",cats:["Friseur"],plan:40,pct:null},
     {n:"GEZ/Rundfunk",cats:["GEZ/Rundfunk"],plan:null,pct:null,fix:1},
     {n:"Reisen",cats:["Reisen"],plan:null,pct:null},
+    {n:"Strom & Nebenkosten",cats:["Strom & Nebenkosten"],plan:null,pct:null,fix:1},
+    {n:"Bargeld",cats:["Bargeld"],plan:null,pct:null},
+    {n:"Auto/Parken",cats:["Auto/Parken"],plan:null,pct:null},
+    {n:"Gesundheit",cats:["Gesundheit"],plan:null,pct:null},
+    {n:"ÖPNV/Bahn",cats:["ÖPNV/Bahn"],plan:null,pct:null},
     {n:"Sparen / ETF",cats:["Sparen"],plan:200,pct:12.5,fix:1,goal:1},
     {n:"Rücklagen",cats:["Rücklagen"],plan:350,pct:null,fix:1,goal:1,note:"Urlaub 110, Hannover 90, Auto 85, Handy 65"},
     {n:"Trading-Ausgaben",cats:["Trading"],plan:666,pct:null,fix:1,note:"laufen über Trade Republic"}
@@ -310,16 +329,16 @@ const HINTS={
 };
 
 /* ---------- Hilfen ---------- */
-const SCHEMA=5;
+const SCHEMA=6;
 const catLabel=c=>c===TRANSFER?"Umbuchungen (zählen nicht)":c;
-const SAVECATS=["Sparen","Rücklagen","Trading"];
+const SAVECATS=["Sparen","Rücklagen"];
 const fixedSum=(S,it)=>{let s=0;for(const f of S.fixed||[])if(it.cats.includes(f.cat))s+=+f.amt||0;return s;};
 const isFixItem=(S,it)=>!!it.fix||fixedSum(S,it)>0;
-function groupOf(S,c){ if(SAVECATS.includes(c))return "save"; for(const it of S.budget.items)if(isFixItem(S,it)&&!it.goal&&it.cats.includes(c))return "fix"; return "var"; }
+function groupOf(S,c){ if(c==="Trading")return "var"; if(SAVECATS.includes(c))return "save"; for(const it of S.budget.items)if(isFixItem(S,it)&&!it.goal&&it.cats.includes(c))return "fix"; return "var"; }
 const suggestFor=(it,income)=>it.pct>0&&income>0?Math.round(income*it.pct/100):null;
 function ensureItems(S){
   const have=new Set(S.budget.items.flatMap(i=>i.cats));
-  for(const c of S.cats){ if(c===INCOME||c===TRANSFER||have.has(c))continue; S.budget.items.push({n:c,cats:[c],plan:null,pct:null}); have.add(c); }
+  for(const c of S.cats){ if(c===INCOME||c===TRANSFER||have.has(c))continue; S.budget.items.push(c==="Strom & Nebenkosten"?{n:c,cats:[c],plan:null,pct:null,fix:1}:{n:c,cats:[c],plan:null,pct:null}); have.add(c); }
 }
 const mkey=t=>t.mo||t.d.slice(0,7);
 const takeRows=(rows,takeMaybe)=>rows.filter(r=>!r.dup&&(!r.maybe||takeMaybe||r.amt>0)); /* moegliche Duplikate: Eingaenge nie still verwerfen */
@@ -470,14 +489,35 @@ function assignHashes(rows,accId){
 }
 
 /* ---------- Kategorisierung ---------- */
+/* ---------- Wort-Matching (keine Teilstrings) ---------- */
 const kwCache=new Map();
-function kwRe(k){
+const tok=s=>norm(s).split(/[^A-Z0-9]+/).filter(Boolean);
+function kwParse(k){
   let r=kwCache.get(k);if(r)return r;
-  let s=norm(k),a="",z="";
-  if(s[0]==="^"){a="(?:^|[^A-Z])";s=s.slice(1);}
-  if(s.endsWith("$")){z="(?:$|[^A-Z0-9])";s=s.slice(0,-1);}
-  r=new RegExp(a+s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+z);kwCache.set(k,r);return r;
+  const [main,...ex]=String(k).split("!");
+  const parts=main.split("+").map(x=>{x=x.trim();const pre=x.startsWith("*"),suf=x.endsWith("*"),core=x.replace(/^\*+|\*+$/g,"").replace(/[\^$]/g,"");return {seq:tok(core),pre,suf};}).filter(p=>p.seq.length);
+  r={parts,ex:ex.flatMap(tok)};kwCache.set(k,r);return r;
 }
+function partMatch(p,toks){
+  const n=p.seq.length;
+  for(let i=0;i+n<=toks.length;i++){
+    let ok=true;
+    for(let j=0;j<n;j++){
+      const t=toks[i+j],w=p.seq[j];
+      const hit=n===1?(p.pre&&p.suf?t.includes(w):p.pre?t.endsWith(w):p.suf?t.startsWith(w):t===w):t===w;
+      if(!hit){ok=false;break;}
+    }
+    if(ok)return true;
+  }
+  return false;
+}
+function kwMatch(r,toks){
+  if(!r.parts.length)return false;
+  if(!r.parts.every(p=>partMatch(p,toks)))return false;
+  if(r.ex.length&&r.ex.some(e=>toks.includes(e)))return false;
+  return true;
+}
+function kwRe(k){const r=kwParse(k);return {test:s=>kwMatch(r,tok(s))};}
 function merchantKey(t){
   let raw=t.p||t.t||"";
   if(/^(PAYPAL|KLARNA|SUMUP|ZETTLE)/.test(norm(raw))){const m=/EINKAUF BEI\s+(.+)$/.exec(norm(t.t||""));if(m&&m[1].length>2)raw=m[1];}
@@ -489,19 +529,59 @@ function merchantKey(t){
 const SALARY_TXT=/GEHALT|(?:^|[^A-Z])LOHN|BEZUEGE|BESOLDUNG|ARBEITGEBER|(?:^|[^A-Z])RENTE(?:[^A-Z]|$)/;
 const TRANSFER_TXT=/UEBERTRAG|UMBUCHUNG|EIGEN|SPARKONTO|TAGESGELD|KREDITKARTE|AMEX|AMERICAN EXPRESS|REVOLUT|TOP-?UP|AUSGLEICH|DAUERAUFTRAG|ZAHLUNG ERHALTEN/;
 const isCardPay=t=>/AMEX|AMERICAN EXPRESS|KREDITKARTE|ZAHLUNG ERHALTEN|AEME/.test(norm((t.p||"")+" "+(t.t||"")));
+const SAL_TOK=toks=>toks.some(t=>t.startsWith("GEHALT")||t==="LOHN"||t==="BEZUEGE"||t==="BESOLDUNG"||t==="ARBEITGEBER"||t==="RENTE");
+const HOUS_TXT=toks=>toks.some(t=>t.endsWith("MIETE")||t==="MIETZAHLUNG"||t==="HAUSVERWALTUNG"||t==="VERMIETER"||t==="WOHNUNGSMIETE");
+const HOUS_PAY=toks=>toks.some(t=>t==="HAUSVERWALTUNG"||t==="VERMIETER"||t.startsWith("WOHNUNGSBAU")||t.startsWith("IMMOBILIEN")||t==="WOHNBAU"||t==="GENOSSENSCHAFT");
+/* Beträge ab 400 Euro im Monatsturnus (gleicher Empfaenger, +-10 %, mindestens 3 Monate): nur fuer unsortierte Buchungen -> Miete */
+function recurringBig(S){
+  const g=new Map(),out=new Set();
+  for(const t of S.tx){if(t.amt<=-400&&!t.man){const k=norm(t.p||"").slice(0,30);if(k)(g.get(k)||g.set(k,[]).get(k)).push(t);}}
+  for(const arr of g.values()){
+    for(const a of arr){
+      const ms=new Set(arr.filter(o=>Math.abs(o.amt-a.amt)<=Math.abs(a.amt)*0.10).map(o=>o.d.slice(0,7)));
+      if(ms.size>=3)out.add(a.h);
+    }
+  }
+  return out;
+}
+function ruleHit(rules,amt,toksAll,toksP){
+  for(const r of rules){
+    if(r.pos&&!(amt>0))continue;if(r.neg&&!(amt<0))continue;if(r.min&&Math.abs(amt)<r.min)continue;if(r.in&&!(amt>0))continue;
+    if(kwMatch(r.p,r.in?toksP:toksAll))return r;
+  }
+  return null;
+}
+/* Pruefreihenfolge: (1) Einzelzuordnung des Nutzers, Nutzerregeln; (2) Gehalt; (3) Wohnen (Vermieter-Woerter);
+   (4) eigene Konten/Umbuchung (Name, IBAN; eine Nutzerregel darf das uebersteuern); (5) Standardregeln nach Spezifitaet; (6) Rest unsortiert. */
 function resolveAll(S){
-  const rules=S.rules.filter(r=>S.cats.includes(r.c)).map(r=>({re:kwRe(r.k),c:r.c,in:!!r.in}));
+  const cats=new Set(S.cats),userR=[],defR=[];
+  for(const r of S.rules){
+    if(!cats.has(r.c))continue;
+    const pr={p:kwParse(r.k),c:r.c,in:!!r.in,pos:!!r.pos,neg:!!r.neg,min:r.min||0};
+    (DEFKEYS.has(norm(r.k)+"|"+r.c)?defR:userR).push(pr);
+  }
+  const mBig=cats.has("Miete")?recurringBig(S):new Set();
   const myN=((S.profile&&S.profile.myNames)||[]).map(norm).filter(x=>x.length>=5),myI=new Set((S.profile&&S.profile.myIbans)||[]);
   const out=new Map(),manual=new Set();
   for(const t of S.tx){
-    let c=null;
-    if(t.c&&S.cats.includes(t.c)){c=t.c;manual.add(t.h);}
-    else{const hs=norm((t.p||"")+" "+(t.t||"")),hp=norm(t.p||"");for(const r of rules){if(r.in){if(!(t.amt>0))continue;if(r.re.test(hp)){c=r.c;break;}continue;}if(r.re.test(hs)){c=r.c;break;}}}
+    let c=null,user=false;
+    const tp=tok(t.p||""),ta=tok((t.p||"")+" "+(t.t||""));
+    if(t.c&&cats.has(t.c)){c=t.c;manual.add(t.h);}
+    else{
+      const h1=ruleHit(userR,t.amt,ta,tp);
+      if(h1){c=h1.c;user=true;}else{const h2=ruleHit(defR,t.amt,ta,tp);if(h2)c=h2.c;}
+    }
     if(t.nt&&c===TRANSFER&&!manual.has(t.h))c=null; /* vom Nutzer zurückgeholt */
-    /* Ein Eingang mit Gehalts-Woertern ist nie eine Umbuchung und wird nie als Sparen/Ruecklage verbucht */
-    if(!manual.has(t.h)&&t.amt>0&&(c==null||c===TRANSFER||c==="Sparen"||c==="Rücklagen")&&SALARY_TXT.test(norm((t.p||"")+" "+(t.t||""))))c=INCOME;
-    /* Eigene Ueberweisungen: Gegenueber ist der Kontoinhaber (Name) oder ein eigenes Konto (IBAN) */
-    if(!manual.has(t.h)&&!t.nt&&((myN.length&&myN.some(n=>norm(t.p||"").includes(n)))||(t.ib&&myI.has(t.ib))))c=TRANSFER;
+    const auto=!manual.has(t.h);
+    /* Gehalt: Stichwort + positiv + mindestens 500 Euro; nie Umbuchung oder Sparen */
+    if(auto&&!user&&t.amt>=500&&(c==null||c===TRANSFER||c==="Sparen"||c==="Rücklagen")&&SAL_TOK(ta))c=INCOME;
+    /* Wohnen: Vermieter-/Miet-Woerter schlagen Namens-Treffer anderer Regeln */
+    if(auto&&t.amt<0&&cats.has("Miete")){
+      if(Math.abs(t.amt)>=200&&c!==TRANSFER&&c!=="Sparen"&&c!=="Rücklagen"&&(HOUS_TXT(tok(t.t||""))||HOUS_PAY(tp)))c="Miete";
+      else if(c==null&&Math.abs(t.amt)>=400&&mBig.has(t.h))c="Miete";
+    }
+    /* Eigene Konten: Gegenueber ist der Kontoinhaber (Name) oder ein eigenes Konto (IBAN) */
+    if(auto&&!user&&!t.nt&&((myN.length&&myN.some(n=>norm(t.p||"").includes(n)))||(t.ib&&myI.has(t.ib))))c=TRANSFER;
     out.set(t.h,c);
   }
   /* Umbuchungen zwischen eigenen Konten: exakt gleicher Betrag, gegenläufig, verschiedene Konten, max. 3 Tage,
@@ -528,45 +608,27 @@ function resolveAll(S){
       out.set(n.h,cn==="Sparen"||cp==="Sparen"?"Sparen":(cn==="Rücklagen"||cp==="Rücklagen"?"Rücklagen":TRANSFER));
     }
   }
-  learnPass(S,out,manual);
   return out;
-}
-/* Auto-Zuordnung: gleiche Glaeubiger-ID oder gleicher Haendler (auch erster Wortteil) wie bereits zugeordnete Ausgaben */
-const NOLEARN=/^(PAYPAL|KLARNA|SUMUP|SQUARE|STRIPE|MOLLIE|RATEPAY|PAYONE|AMAZON PAYMENTS|APPLE|GOOGLE|VISA|MASTERCARD|SEPA|LASTSCHRIFT)/;
-function learnPass(S,out,manual){
-  const gm=new Map(),km=new Map(),fm=new Map();
-  const add=(m,k,c)=>{let e=m.get(k);if(!e){e={};m.set(k,e);}e[c]=(e[c]||0)+1;};
-  for(const t of S.tx){
-    const c=out.get(t.h);if(c==null||c===TRANSFER||c===INCOME||t.amt>=0)continue;
-    if(t.g)add(gm,t.g,c);
-    const k=merchantKey(t);if(k&&!NOLEARN.test(k)){add(km,k,c);const f=k.split(" ")[0];if(f.length>=4)add(fm,f,c);}
-  }
-  const dom=e=>{if(!e)return null;let tot=0,best=null,bn=0;for(const c in e){tot+=e[c];if(e[c]>bn){bn=e[c];best=c;}}return tot&&bn/tot>=0.8?best:null;};
-  for(const t of S.tx){
-    if(out.get(t.h)!=null||manual.has(t.h)||t.amt>=0)continue;
-    let c=t.g?dom(gm.get(t.g)):null;
-    if(!c){const k=merchantKey(t);if(k&&!NOLEARN.test(k)){c=dom(km.get(k));if(!c){const f=k.split(" ")[0];if(f.length>=4)c=dom(fm.get(f));}}}
-    if(c)out.set(t.h,c);
-  }
 }
 let _catCache={ver:-1,map:null};
 function catsOf(S,ver){ if(_catCache.ver!==ver||_catCache.S!==S){_catCache={ver,S,map:resolveAll(S)};} return _catCache.map; }
 
 /* ---------- Auswertung ---------- */
+/* Einnahmen = nur Kategorie Einkommen. Alle anderen positiven Betraege (Rueckzahlungen, Beitraege, Gutschriften) sind
+   "Weitere Eingaenge" (other): sie zaehlen in Uebrig als Geldzufluss, nie in Einnahmen. Nichts wird mit Ausgaben verrechnet. */
 function monthAgg(S,ym,cmap){
-  const a={inc:0,exp:0,byCat:{},unsorted:[],n:0,tx:[],trans:[],transSum:0,fix:0,var:0,save:0,unsOut:0,unsIn:0,tradeIn:0,tradeOut:0,last:"",ins:[],insSum:0};
+  const a={inc:0,other:0,exp:0,byCat:{},unsorted:[],n:0,tx:[],incTx:[],trans:[],transSum:0,fix:0,var:0,save:0,unsOut:0,unsIn:0,tradeIn:0,tradeOut:0,last:"",ins:[],insSum:0};
   for(const t of S.tx){
     if(mkey(t)!==ym)continue;
     a.n++;if(t.d>a.last)a.last=t.d;
     const c=cmap.get(t.h);
     if(c===TRANSFER){a.trans.push(t);continue;}
     a.tx.push(t);
-    if(c===INCOME){a.inc+=t.amt;continue;}
-    if(t.amt>0){ /* positive Betraege zaehlen immer als Einnahmen, auch unsortierte */
-      a.inc+=t.amt;
+    if(c===INCOME){a.inc+=t.amt;if(t.amt>0)a.incTx.push(t);continue;}
+    if(t.amt>0){
+      a.other+=t.amt;a.ins.push(t);a.insSum+=t.amt;
       if(c==null){a.unsIn+=t.amt;a.unsorted.push(t);}
       else{const b=a.byCat[c]||(a.byCat[c]={net:0,tx:[]});b.tx.push(t);if(c==="Trading")a.tradeIn+=t.amt;}
-      if(c!=="Trading"){a.ins.push(t);a.insSum+=t.amt;} /* Eingaenge, die nicht als Gehalt erkannt sind: zum Pruefen */
       continue;
     }
     if(c==null){a.unsOut-=t.amt;a.exp-=t.amt;a.unsorted.push(t);continue;}
@@ -576,7 +638,7 @@ function monthAgg(S,ym,cmap){
   }
   const neg=a.trans.filter(t=>t.amt<0).reduce((s,t)=>s-t.amt,0),pos=a.trans.filter(t=>t.amt>0).reduce((s,t)=>s+t.amt,0);
   a.transSum=Math.max(neg,pos);
-  a.saldo=a.inc-a.exp;
+  a.saldo=a.inc+a.other-a.exp;
   return a;
 }
 /* Gehalt, das kurz vor Monatsende bzw. zu Monatsbeginn gebucht wurde und deshalb im Nachbarmonat steht */
@@ -633,7 +695,7 @@ function commonPeriod(S){
 /* Kreisdiagramm: stabile Farben je Kategorie */
 const PALETTE=["#4f46e5","#0ea5e9","#14b8a6","#22c55e","#eab308","#f97316","#ef4444","#ec4899","#a855f7","#8b5cf6","#06b6d4","#84cc16","#f59e0b","#64748b","#d946ef","#10b981","#3b82f6","#e11d48","#7c3aed","#0d9488","#ca8a04"];
 function catColor(k){
-  if(k==null||k==="(unsortiert)")return "#9ca3af";if(k==="__more")return "#94a3b8";
+  if(k==null||k==="(unsortiert)")return "#9ca3af";if(k==="__more")return "#94a3b8";if(k==="__other")return "#38bdf8";
   let i=DEF_CATS.indexOf(k);if(i<0)i=parseInt(cyrb53(String(k)),36);
   return PALETTE[i%PALETTE.length];
 }
@@ -642,7 +704,7 @@ function donutData(S,ym,cmap,mode){
   for(const t of S.tx){
     if(mkey(t)!==ym)continue;const c=cmap.get(t.h);if(c===TRANSFER)continue;
     let key,v;
-    if(mode==="in"){if(t.amt<=0)continue;key=c==null?"(unsortiert)":c;v=t.amt;}
+    if(mode==="in"){if(t.amt<=0)continue;key=c===INCOME?INCOME:"__other";v=t.amt;}
     else if(mode==="acc"){if(t.amt>=0)continue;key=t.a;v=-t.amt;}
     else{if(t.amt>=0)continue;key=c==null?"(unsortiert)":c;v=-t.amt;}
     sums.set(key,(sums.get(key)||0)+v);
@@ -678,12 +740,13 @@ function detectOwnNames(rows){
 }
 /* Fuer bereits importierte Daten (ohne gespeicherten Namen): Gegenueber, das als Person haeufig Eingaenge UND Ausgaenge hat = vermutlich der Kontoinhaber (nur Vorschlag mit Rueckfrage) */
 const COMP_RE=/(^| )(GMBH|MBH|AG|KG|UG|BANK|MARKT|SHOP|STORE|VERSICHERUNG|SPARKASSE|STADT|LTD|INC|EUROPE|LUXEMBOURG|ONLINE|PAYMENTS|EG|CO|SERVICE|DEUTSCHLAND)( |$)/;
+const PAYPROC=/^(PAYPAL|KLARNA|SUMUP|SQUARE|STRIPE|MOLLIE|RATEPAY|PAYONE|AMAZON PAYMENTS|APPLE|GOOGLE|VISA|MASTERCARD|SEPA|LASTSCHRIFT)/;
 function detectOwnCandidate(S){
   if(S.profile&&(S.profile.myNames||[]).length)return null;
   const skip=new Set((S.profile&&S.profile.skipNames)||[]),g=new Map();
   for(const t of S.tx){
     if(t.man||!t.p)continue;const k=norm(t.p).slice(0,40);
-    if(!k||skip.has(k)||NOLEARN.test(k)||COMP_RE.test(k)||!/^[A-Z][A-Z.\-]*( [A-Z.\-]+)+$/.test(k))continue;
+    if(!k||skip.has(k)||PAYPROC.test(k)||COMP_RE.test(k)||!/^[A-Z][A-Z.\-]*( [A-Z.\-]+)+$/.test(k))continue;
     const e=g.get(k)||g.set(k,{pos:0,neg:0}).get(k);if(t.amt>0)e.pos++;else e.neg++;
   }
   for(const [k,e] of g)if(e.pos>=3&&e.neg===0){e.neg=S.tx.filter(t=>t.amt<0&&!t.man&&norm(t.p||"").startsWith(k+" ")).length;} /* z. B. Ausgang an "Name Sparkonto" */
@@ -707,6 +770,40 @@ function detectSalary(S,cmap){
     if(!best||score>best.score)best={k,name:(arr[0].p||k).slice(0,30),amt:Math.round(med),months:months.size,score};
   }
   return best;
+}
+/* Warnung beim Anlegen: trifft eine Regel sehr viele Buchungen oder Haendler? */
+function ruleBreadth(S,k){
+  const s=norm(k).replace(/^\^/,"").replace(/\$$/,""),re=kwRe(k),keys=new Set();let n=0;
+  for(const t of S.tx){if(re.test(norm((t.p||"")+" "+(t.t||"")))){n++;keys.add(merchantKey(t));}}
+  return {n,d:keys.size,short:s.length<4,broad:s.length<4||keys.size>30};
+}
+/* Regeln neu anwenden: Zuordnungen, die aus Regeln stammen (rl) oder von einer eigenen Regel gleicher Kategorie getragen werden, werden geloescht und neu berechnet. Einzeln gesetzte (mn) und alte Zuordnungen ohne passende Regel bleiben. */
+function reapplyRules(S){
+  const defs=new Set(expandRules().map(r=>norm(r.k)+"|"+r.c)),ur=S.rules.filter(r=>!defs.has(norm(r.k)+"|"+r.c)).map(r=>({re:kwRe(r.k),c:r.c,in:!!r.in}));
+  let n=0;
+  for(const t of S.tx){
+    if(!t.c||t.mn||t.man)continue;
+    const hs=norm((t.p||"")+" "+(t.t||"")),hp=norm(t.p||"");
+    const derived=t.rl||ur.some(r=>r.c===t.c&&(!r.in||t.amt>0)&&r.re.test(r.in?hp:hs));
+    if(derived){t.c=undefined;t.rl=undefined;t.u=Date.now();n++;}
+  }
+  return n;
+}
+/* Miete mit Monatsangabe im Verwendungszweck ("Miete Oktober", gebucht am 29.09.): zaehlt im genannten Monat (Feld mo) */
+const MONTHS_DE={JANUAR:1,JAN:1,FEBRUAR:2,FEB:2,MAERZ:3,MRZ:3,APRIL:4,APR:4,MAI:5,JUNI:6,JUN:6,JULI:7,JUL:7,AUGUST:8,AUG:8,SEPTEMBER:9,SEPT:9,SEP:9,OKTOBER:10,OKT:10,NOVEMBER:11,NOV:11,DEZEMBER:12,DEZ:12};
+function applyRentMonths(S,cm){
+  let n=0;
+  for(const t of S.tx){
+    if(t.mo||t.amt>=0||cm.get(t.h)!=="Miete")continue;
+    let mo=null;for(const w of tok(t.t||""))if(MONTHS_DE[w]){mo=MONTHS_DE[w];break;}
+    if(!mo)continue;
+    const by=+t.d.slice(0,4),bm=+t.d.slice(5,7);let best=null,bd=99;
+    for(const y of [by-1,by,by+1]){const d=Math.abs((y*12+mo)-(by*12+bm));if(d<bd){bd=d;best=y;}}
+    if(best==null||bd>3)continue;
+    const key=best+"-"+pad2(mo);
+    if(key!==t.d.slice(0,7)){t.mo=key;t.u=Date.now();n++;}
+  }
+  return n;
 }
 /* Diagnose je Konto: nur Zahlen, keine Texte oder Namen aus Buchungen */
 function importDiag(S){
@@ -764,30 +861,63 @@ function effIncome(S,ym,cmap,today){
   if(S.budget.planIncome>0)return {v:S.budget.planIncome,src:"Plan"};
   return {v:0,src:"fehlt",missing:true};
 }
-/* Ø pro Monat: je Konto nur dessen vollstaendige Monate (letzte N, N=0: alle), Ø = Summe / Anzahl dieser Monate;
-   Konten werden addiert (Betrag pro Monat), Zeilen zeigen die Zahl der Monate (kleinster Wert der beteiligten Konten). */
-function avgReport(S,cmap,N){
+/* Ø pro Monat: je Konto nur dessen vollstaendige Monate (letzte N, N=0: alle), Ø = Summe / Anzahl dieser Monate.
+   Betraege stehen so, wie sie gebucht wurden. Fixkosten werden je Haendler/Empfaenger und Betrag (+-10 %) zu Posten
+   zusammengefasst: Betrag = zuletzt gebuchter regelmaessiger Betrag, Einmalzahlungen bleiben einfach aussen vor.
+   Einnahmen = nur Kategorie Einkommen, "other" = weitere Eingaenge. */
+const medianOf=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:0;};
+function fixPosts(arr,allArr,n){
+  const need=n>=2?Math.max(2,Math.ceil(n*0.5)):1,byK=new Map(),posts=[];
+  for(const o of arr)(byK.get(o.key)||byK.set(o.key,[]).get(o.key)).push(o);
+  for(const [key,list] of byK){
+    const used=new Set(),sorted=[...list].sort((x,y)=>x.amt-y.amt);
+    for(const a of sorted){
+      if(used.has(a.h))continue;
+      const cl=sorted.filter(o=>!used.has(o.h)&&Math.abs(o.amt-a.amt)<=a.amt*0.10),ms=new Set(cl.map(o=>o.m));
+      if(ms.size<need)continue;
+      cl.forEach(o=>used.add(o.h));
+      const med=medianOf(cl.map(o=>o.amt));
+      const latest=allArr.filter(o=>o.key===key&&Math.abs(o.amt-med)<=med*0.25).sort((x,y)=>x.d<y.d?1:-1)[0];
+      const per=Math.max(1,medianOf([...ms].map(m=>cl.filter(o=>o.m===m).length)));
+      posts.push({key,name:cl[0].name,amt:(latest?latest.amt:med)*per,count:per});
+    }
+  }
+  return posts.sort((x,y)=>y.amt-x.amt);
+}
+function avgReport(S,cmap,N,opt,today){
   const cov=coverage(S),rows={},accs=[];
-  let inc=0,incN=0,nMin=0,tradeIn=0;
+  let inc=0,incN=0,nMin=0,tradeIn=0,other=0,moved=0;
   for(const a of S.accounts){
     const e=cov[a.id];if(!e||!e.complete.length)continue;
     const ms=N?e.complete.slice(-N):e.complete,set=new Set(ms),n=ms.length;
     accs.push({id:a.id,name:a.name,n,first:e.first,last:e.last});
     nMin=nMin?Math.min(nMin,n):n;
-    const sums={};let ai=0;
+    const winOut={},allOut={};let ai=0,ao=0,mv=0;
     for(const t of S.tx){
-      if(t.a!==a.id||!set.has(mkey(t)))continue;
-      const cat=cmap.get(t.h);if(cat===TRANSFER)continue;
-      if(t.amt>0){ai+=t.amt;if(cat==="Trading")tradeIn+=t.amt/n;}
-      else{const k=cat==null?"(unsortiert)":cat;sums[k]=(sums[k]||0)-t.amt;}
+      if(t.a!==a.id)continue;
+      const cat=cmap.get(t.h),m=mkey(t);
+      if(cat===TRANSFER){if(t.amt<0&&set.has(m)&&!isCardPay(t))mv-=t.amt;continue;}
+      if(t.amt<0){
+        const k=cat==null?"(unsortiert)":cat,o={h:t.h,d:t.d,m,amt:-t.amt,key:merchantKey(t),name:(t.p||t.t||"").slice(0,30)};
+        (allOut[k]||(allOut[k]=[])).push(o);if(set.has(m))(winOut[k]||(winOut[k]=[])).push(o);
+      }else if(set.has(m)){
+        if(cat===INCOME)ai+=t.amt;else{ao+=t.amt;if(cat==="Trading")tradeIn+=t.amt/n;}
+      }
     }
     if(ai>0){inc+=ai/n;incN=incN?Math.min(incN,n):n;}
-    for(const k in sums){const r=rows[k]||(rows[k]={cat:k,avg:0,n:n});r.avg+=sums[k]/n;r.n=Math.min(r.n,n);}
+    other+=ao/n;moved+=mv/n;
+    for(const k in winOut){
+      const grp=k==="(unsortiert)"?"uns":groupOf(S,k),arr=winOut[k];
+      let val=arr.reduce((s,o)=>s+o.amt,0)/n,posts=[];
+      if(grp==="fix"){posts=fixPosts(arr,allOut[k],n);if(posts.length||n>=2)val=posts.reduce((s,p)=>s+p.amt,0);}
+      const r0=rows[k]||(rows[k]={cat:k,avg:0,val:0,n,posts:[]});
+      r0.avg+=val;r0.val+=val;r0.n=Math.min(r0.n,n);for(const p of posts)r0.posts.push(p);
+    }
   }
-  const list=Object.values(rows).map(r=>Object.assign(r,{group:r.cat==="(unsortiert)"?"uns":groupOf(S,r.cat)})).sort((a,b)=>b.avg-a.avg);
-  const sum=g=>list.filter(r=>r.group===g).reduce((s,r)=>s+r.avg,0);
-  const fix=sum("fix"),vr=sum("var"),save=sum("save"),uns=sum("uns");
-  return {rows:list,accs,inc,incN,fix,var:vr,save,uns,left:inc-fix-vr-save-uns,nMin,tradeIn};
+  const list=Object.values(rows).map(r=>Object.assign(r,{group:r.cat==="(unsortiert)"?"uns":groupOf(S,r.cat),posts:r.posts.sort((x,y)=>y.amt-x.amt)})).sort((x,y)=>y.val-x.val);
+  const sum=g=>list.filter(r=>r.group===g).reduce((s,r)=>s+r.val,0);
+  const fix=sum("fix"),vr=sum("var"),save=sum("save"),uns=sum("uns"),tc=list.find(r=>r.cat==="Trading");
+  return {rows:list,accs,inc,incN,other,moved,fix,var:vr,save,uns,left:inc+other-fix-vr-save-uns,nMin,tradeIn,tradeCost:tc?tc.val:0};
 }
 
 function refOf(S,it,income){
@@ -846,8 +976,8 @@ function detectRecurring(S,cmap){
   return out.sort((a,b)=>b.amt-a.amt).slice(0,8);
 }
 const lastDate=(S,accId)=>{let m="";for(const t of S.tx)if(t.a===accId&&t.d>m)m=t.d;return m;};
-const GENERIC=new Set(["KARTENZAHLUNG","LASTSCHRIFT","GMBH","MARKT","SAGT","DANKE","ZAHLUNG","UEBERWEISUNG","DAUERAUFTRAG","GIROCARD","DEBIT","ONLINE","PURCHASE","MANDATSREFERENZ","GLAEUBIGER"]);
-const dupTokens=s=>new Set(norm(s).split(" ").filter(w=>w.length>=4&&/^[A-Z]+$/.test(w)&&!GENERIC.has(w)));
+const GENERIC=new Set(["DEBITKARTENUMSATZ","VISA","KARTENZAHLUNG","VOM","MASTERCARD","EUROPE","LUXEMBOURG","PAYPAL","ENTGELT","BUCHUNG","KARTE","GIRO","KARTENZAHLUNG","LASTSCHRIFT","GMBH","MARKT","SAGT","DANKE","ZAHLUNG","UEBERWEISUNG","DAUERAUFTRAG","GIROCARD","DEBIT","ONLINE","PURCHASE","MANDATSREFERENZ","GLAEUBIGER"]);
+const dupTokens=s=>new Set(tok(s).filter(w=>w.length>=4&&/^[A-Z]+$/.test(w)&&!GENERIC.has(w)));
 /* Duplikate: exakter Hash (alte Methode, bleibt kompatibel) oder gleiches Datum+Betrag+Konto mit gemeinsamem Wort
    (z. B. dieselbe Buchung aus PDF und CSV). Gleiches Datum+Betrag+Konto aber anderer Text = "maybe" (Rückfrage). */
 function markDups(S,rows,accId){
@@ -860,7 +990,7 @@ function markDups(S,rows,accId){
     if(arr&&arr.length){
       const tk=dupTokens((r.p||"")+" "+(r.t||""));
       const i=arr.findIndex(s=>{for(const w of tk)if(s.has(w))return true;return false;});
-      if(i>=0){r.dup=true;arr.splice(i,1);}else r.maybe=true;
+      if(i>=0){r.dup=true;arr.splice(i,1);} /* gleicher Betrag+Datum bei anderem Haendler: KEIN Duplikat */
     }
   }
   return rows;
@@ -942,6 +1072,7 @@ function newState(){
   return S;
 }
 /* Migration: nur additiv und idempotent. Alte Daten (v1) bleiben lesbar, Felder werden ergänzt. */
+const LEGACY_RULES=new Set(["RUECKLAGE|Rücklagen","SPARDA|Sparen","^ETF$|Sparen","BAUSPAR|Sparen","UEBERTRAG|Eigene Überträge","UMBUCHUNG|Eigene Überträge","ZAHLUNG ERHALTEN|Eigene Überträge","TOP-UP|Eigene Überträge","TOPUP|Eigene Überträge","AMERICAN EXPRESS|Eigene Überträge","KREDITKARTENABRECHNUNG|Eigene Überträge","GEHALT|Einkommen","^LOHN|Einkommen","BESOLDUNG|Einkommen","APEXFUTURES|Trading","APEX FUTURES|Trading","TAKEPROFIT|Trading","TAKE PROFIT|Trading","TOPSTEP|Trading","TRADERVUE|Trading","^ATAS$|Trading","TRADE REPUBLIC|Trading","TRADEREPUBLIC|Trading","MIETE|Miete","REWE|Lebensmittel","EDEKA|Lebensmittel","ALDI|Lebensmittel","LIDL|Lebensmittel","KAUFLAND|Lebensmittel","PENNY|Lebensmittel","NETTO MARKEN|Lebensmittel","BAECKEREI|Lebensmittel","^DM$|Drogerie","ROSSMANN|Drogerie","SHELL|Tanken","^ARAL$|Tanken","^ESSO$|Tanken","^JET$|Tanken","^TOTAL$|Tanken","TOTALENERGIES|Tanken","^AVIA$|Tanken","^HEM$|Tanken","TANKSTELLE|Tanken","NETFLIX|Abos","SPOTIFY|Abos","DAZN|Abos","PLAYSTATION|Abos","ICLOUD|Abos","ANTHROPIC|Abos","CLAUDE|Abos","KINGSIZE|Abos","APPLE.COM/BILL|Abos","AMAZON|Online-Shopping","PAYPAL|Online-Shopping","EBAY|Online-Shopping","ZALANDO|Online-Shopping","MCDONALD|Essen gehen","BURGER KING|Essen gehen","LIEFERANDO|Essen gehen","^WOLT|Essen gehen","RESTAURANT|Essen gehen","CAFE|Essen gehen","STARBUCKS|Essen gehen","PIZZ|Essen gehen","DOENER|Essen gehen","IMBISS|Essen gehen","BISTRO|Essen gehen","SUBWAY|Essen gehen","VERSICHERUNG|Versicherungen","ADAC|Versicherungen","^HUK|Versicherungen","ALLIANZ|Versicherungen","DEVK|Versicherungen","^HDI$|Versicherungen","TELEKOM|Handy/Internet","VODAFONE|Handy/Internet","^O2$|Handy/Internet","1UND1|Handy/Internet","1&1|Handy/Internet","FREENET|Handy/Internet","KLETT|Weiterbildung","^ILS$|Weiterbildung","FERNSCHULE|Weiterbildung","UDEMY|Weiterbildung","FRISEUR|Friseur","BARBER|Friseur","HAIR|Friseur","^GEZ$|GEZ/Rundfunk","RUNDFUNK|GEZ/Rundfunk","BEITRAGSSERVICE|GEZ/Rundfunk","BOOKING|Reisen","AIRBNB|Reisen","FLUG|Reisen","LUFTHANSA|Reisen","RYANAIR|Reisen","HOTEL|Reisen","^KART$|Freizeit","KARTBAHN|Freizeit","KARTING|Freizeit","^KINO|Freizeit","^GYM$|Freizeit","FITNESS|Freizeit","MCFIT|Freizeit","STEAM|Freizeit","SAMMELUEBERWEISUNG|Sparen","^AMEX|Eigene Überträge","AEME|Eigene Überträge","KREDITKARTE ABRECHNUNG|Eigene Überträge","ZAHLUNG REVOLUT|Eigene Überträge","REVOLUT BANK|Eigene Überträge","REVOLUT LTD|Eigene Überträge","REVOLUT TOP|Eigene Überträge","BEZUEGE|Einkommen","ARBEITGEBER|Einkommen","LOHN/GEHALT|Einkommen","SCALABLE|Sparen","COMDIRECT|Sparen","SPARPLAN|Sparen","WERTPAPIER|Sparen","^REVOLUT$|Eigene Überträge","^REVOLUT BANK|Eigene Überträge","APEXTRADER|Trading","APEX TRADER|Trading","TRADEIFY|Trading","^WHOP|Trading","FUNDEDNEXT|Trading","FTMO|Trading","FUNDINGPIPS|Trading","BULENOX|Trading","^LUCID|Trading","ELITE TRADER|Trading","MYFUNDED|Trading","ALPHA FUTURES|Trading","TRADOVATE|Trading","NINJATRADER|Trading","TRADINGVIEW|Trading","FUNDED FUTURES|Trading","TRADEDAY|Trading","STADTWERKE|Miete","ENBW|Miete","VATTENFALL|Miete","ENTEGA|Miete","^EON|Miete","E.ON|Miete","NEBENKOSTEN|Miete","HAUSVERWALTUNG|Miete","WOHNUNGSBAU|Miete","VONOVIA|Miete","^EWE|Miete","BADENOVA|Miete","WASSERVERSORGUNG|Miete","MUELLABFUHR|Miete","ABFALL|Miete","NORMA|Lebensmittel","^DENNS|Lebensmittel","BIOMARKT|Lebensmittel","ALNATURA|Lebensmittel","TEGUT|Lebensmittel","GLOBUS|Lebensmittel","MARKTKAUF|Lebensmittel","BAECKER|Lebensmittel","BACKWERK|Lebensmittel","BACKSHOP|Lebensmittel","BREZEL|Lebensmittel","METZGER|Lebensmittel","FLEISCHEREI|Lebensmittel","KIOSK|Lebensmittel","GETRAENKE|Lebensmittel","HIT MARKT|Lebensmittel","NAHKAUF|Lebensmittel","NAH UND GUT|Lebensmittel","SPAR MARKT|Lebensmittel","LEBENSMITTEL|Lebensmittel","MERCADONA|Lebensmittel","CARREFOUR|Lebensmittel","LECLERC|Lebensmittel","AUCHAN|Lebensmittel","TESCO|Lebensmittel","CONAD|Lebensmittel","^SPAR$|Lebensmittel","APOTHEKE|Drogerie","MUELLER DROGERIE|Drogerie","SANITAETSHAUS|Drogerie","^BFT|Tanken","AGIP|Tanken","^OMV|Tanken","ORLEN|Tanken","AUTOHOF|Tanken","RASTHOF|Tanken","^STAR TANK|Tanken","SB TANK|Tanken","HOYER|Tanken","^ENI|Tanken","TAMOIL|Tanken","PARKHAUS|Tanken","PARKEN|Tanken","PARKSCHEIN|Tanken","WASCHPARK|Tanken","AUTOWASCH|Tanken","LADESTATION|Tanken","ENBW MOBILITY|Tanken","SONY INTERACTIVE|Abos","DISNEY|Abos","PRIME VIDEO|Abos","AMAZON PRIME|Abos","YOUTUBE|Abos","GOOGLE ONE|Abos","GOOGLE STORAGE|Abos","TWITCH|Abos","AUDIBLE|Abos","DEEZER|Abos","WAIPU|Abos","^SKY|Abos","RTL+|Abos","PARAMOUNT|Abos","CRUNCHYROLL|Abos","DUOLINGO|Abos","OPENAI|Abos","CHATGPT|Abos","MICROSOFT 365|Abos","DROPBOX|Abos","NORDVPN|Abos","PATREON|Abos","APPLE.COM|Abos","CANVA|Abos","ADOBE|Abos","NOTION|Abos","GITHUB|Abos","JETBRAINS|Abos","ZOOM|Abos","ABOUT YOU|Online-Shopping","^OTTO|Online-Shopping","SHEIN|Online-Shopping","TEMU|Online-Shopping","ALIEXPRESS|Online-Shopping","KLEINANZEIGEN|Online-Shopping","VINTED|Online-Shopping","MEDIAMARKT|Online-Shopping","SATURN|Online-Shopping","CYBERPORT|Online-Shopping","NOTEBOOKSBILLIGER|Online-Shopping","GALAXUS|Online-Shopping","IKEA|Online-Shopping","HORNBACH|Online-Shopping","^OBI|Online-Shopping","BAUHAUS|Online-Shopping","TOOM|Online-Shopping","HAGEBAU|Online-Shopping","DECATHLON|Online-Shopping","BOOKS|Online-Shopping","THALIA|Online-Shopping","HUGENDUBEL|Online-Shopping","EUREST|Essen gehen","KANTINE|Essen gehen","MENSA|Essen gehen","SODEXO|Essen gehen","COMPASS GROUP|Essen gehen","CAFETERIA|Essen gehen","BURGER|Essen gehen","KFC|Essen gehen","DOMINO|Essen gehen","VAPIANO|Essen gehen","SUSHI|Essen gehen","THAI|Essen gehen","ITALIEN|Essen gehen","GRILL|Essen gehen","KEBAB|Essen gehen","BIERGARTEN|Essen gehen","WIRTSHAUS|Essen gehen","GASTST|Essen gehen","DELIVEROO|Essen gehen","UBER EATS|Essen gehen","NORDSEE|Essen gehen","OSTERIA|Essen gehen","TRATTORIA|Essen gehen","BRAUHAUS|Essen gehen","ALTE BRAUEREI|Essen gehen","SNACK|Essen gehen","PIZZERIA|Essen gehen","DONER|Essen gehen","LA CASA|Essen gehen","ASIA|Essen gehen","BOWL|Essen gehen","FRISCH BACKEN|Essen gehen","BAR&|Essen gehen","CHECK24|Versicherungen","NUERNBERGER|Versicherungen","GOTHAER|Versicherungen","AXA|Versicherungen","DEBEKA|Versicherungen","SIGNAL IDUNA|Versicherungen","BARMER|Versicherungen","TECHNIKER KRANKEN|Versicherungen","^AOK|Versicherungen","KRANKENKASSE|Versicherungen","DAK GESUND|Versicherungen","IDEAL VERS|Versicherungen","GENERALI|Versicherungen","CONCORDIA|Versicherungen","WGV|Versicherungen","HUK-COBURG|Versicherungen","HUK COBURG|Versicherungen","KFZ-VERS|Versicherungen","LVM|Versicherungen","TELEFONICA|Handy/Internet","CONGSTAR|Handy/Internet","MOBILCOM|Handy/Internet","DEUTSCHE GLASFASER|Handy/Internet","SIMYO|Handy/Internet","LEBARA|Handy/Internet","PYUR|Handy/Internet","UNITYMEDIA|Handy/Internet","KABEL DEUTSCHLAND|Handy/Internet","FRAENK|Handy/Internet","NETZCLUB|Handy/Internet","WINSIM|Handy/Internet","SIM.DE|Handy/Internet","COURSERA|Weiterbildung","SKILLSHARE|Weiterbildung","SEMINAR|Weiterbildung","FORTBILDUNG|Weiterbildung","UNIVERSITAET|Weiterbildung","HOCHSCHULE|Weiterbildung","VOLKSHOCHSCHULE|Weiterbildung","COIFFEUR|Friseur","KOSMETIK|Friseur","NAGELSTUDIO|Friseur","BARBERSHOP|Friseur","ARD ZDF|GEZ/Rundfunk","DB VERTRIEB|Reisen","DEUTSCHE BAHN|Reisen","FLIXBUS|Reisen","EASYJET|Reisen","EUROWINGS|Reisen","CONDOR|Reisen","^TUI|Reisen","SIXT|Reisen","EUROPCAR|Reisen","HERTZ|Reisen","HOSTEL|Reisen","EXPEDIA|Reisen","TRIVAGO|Reisen","PAYMENTS LUXEMBO|Reisen","AIRLINE|Reisen","NIKE|Bekleidung","ADIDAS|Bekleidung","H&M|Bekleidung","ZARA|Bekleidung","PRIMARK|Bekleidung","C&A|Bekleidung","PEEK|Bekleidung","^JACK|Bekleidung","SPORT SCHECK|Bekleidung","TITUS|Bekleidung","ZUMIEZ|Bekleidung","FOOTLOCKER|Bekleidung","DEICHMANN|Bekleidung","VERO MODA|Bekleidung","TOMMY|Bekleidung","BERSHKA|Bekleidung","TK MAXX|Bekleidung","ESPRIT|Bekleidung","S.OLIVER|Bekleidung","MANGO|Bekleidung","UNIQLO|Bekleidung","JACK&JONES|Bekleidung","JACK JONES|Bekleidung","PULL&BEAR|Bekleidung","SNIPES|Bekleidung","SIZEER|Bekleidung","ENTGELT|Sonstiges","KONTOFUEHRUNG|Sonstiges","GEBUEHR|Sonstiges","KREDITKARTENGEBUEHR|Sonstiges","DHL|Sonstiges","^POST|Sonstiges","HERMES|Sonstiges","DPD|Sonstiges","^UPS$|Sonstiges","BAHN|Sonstiges","^KVV|Sonstiges","^VRR|Sonstiges","^MVG|Sonstiges","^BVG|Sonstiges","^RMV|Sonstiges","^HVV|Sonstiges","^VGN|Sonstiges","NAHVERKEHR|Sonstiges","TICKETSHOP|Sonstiges","^UBER|Sonstiges","^BOLT|Sonstiges","FREENOW|Sonstiges","FLINKSTER|Sonstiges","SHARENOW|Sonstiges","^TIER$|Sonstiges","^LIME$|Sonstiges","^BIRD$|Sonstiges","REPARATUR|Sonstiges","WERKSTATT|Sonstiges","TUEV|Sonstiges","DEKRA|Sonstiges","^ATU$|Sonstiges","PEARL|Sonstiges","^DOTT|Sonstiges","COPECART|Sonstiges","GELDAUTOMAT|Sonstiges","BARGELDAUSZAHLUNG|Sonstiges","^SPARKASSE|Sonstiges","^VOLKSBANK|Sonstiges","^RAIFFEISEN|Sonstiges","^COMMERZBANK|Sonstiges","^DEUTSCHE BANK|Sonstiges","^POSTBANK|Sonstiges","^BBBANK|Sonstiges","^PSD BANK|Sonstiges","WESTERWALD BANK|Sonstiges","^VR BANK|Sonstiges","^SPARDA-B|Sonstiges","URBAN SPORTS|Freizeit","FITX|Freizeit","CLEVER FIT|Freizeit","FITSTAR|Freizeit","JOHN REED|Freizeit","SPORTWELT|Freizeit","SCHWIMMBAD|Freizeit","THERME|Freizeit","FREIZEITPARK|Freizeit","^ZOO$|Freizeit","THEATER|Freizeit","KONZERT|Freizeit","EVENTIM|Freizeit","TICKETMASTER|Freizeit","BOWLING|Freizeit","ESCAPE|Freizeit","EPIC GAMES|Freizeit","NINTENDO|Freizeit","PLAYSTATION STORE|Freizeit","GAMES|Freizeit","GOLF|Freizeit","TENNIS|Freizeit","KLETTERN|Freizeit","BOULDER|Freizeit","SAUNA|Freizeit","CINEMAXX|Freizeit","CINESTAR|Freizeit","UCI KINO|Freizeit","FILMPALAST|Freizeit","CINEORDER|Freizeit","^CINEPLEX|Freizeit","KINOPOLIS|Freizeit"]);
 function migrateState(s){
   let ch=false;
   if((s.v||1)<2){
@@ -978,6 +1109,15 @@ function migrateState(s){
     for(const r of expandRules())if(!have.has(norm(r.k)+"|"+r.c)&&s.cats.includes(r.c)&&!(r.c==="Sonstiges"&&false))s.rules.push(r);
     s.v=5;ch=true;
   }
+  if((s.v||1)<6){ /* v6: neue Kategorien additiv, Standardregeln neu (Altstandard raus, eigene Regeln bleiben), einmalige Reparatur */
+    for(const k of DEF_CATS)if(!s.cats.includes(k))s.cats.push(k);
+    const cur=new Set(expandRules().map(r=>norm(r.k)+"|"+r.c));
+    s.rules=s.rules.filter(r=>{const k=norm(r.k)+"|"+r.c;return !(LEGACY_RULES.has(k)&&!cur.has(k));});
+    const hv=new Set(s.rules.map(r=>norm(r.k)+"|"+r.c));
+    for(const r of expandRules())if(!hv.has(norm(r.k)+"|"+r.c)&&s.cats.includes(r.c))s.rules.push(r);
+    ensureItems(s);
+    s.__repair=1;s.v=6;ch=true;
+  }
   if(!Array.isArray(s.profile.skipNames))s.profile.skipNames=[];if(!Array.isArray(s.profile.myNames))s.profile.myNames=[];if(!Array.isArray(s.profile.myIbans))s.profile.myIbans=[];
   const n0=s.budget.items.length;ensureItems(s);if(s.budget.items.length!==n0)ch=true;
   return ch;
@@ -994,6 +1134,7 @@ function normalizeState(s){
   if(!Array.isArray(s.profile.skipRec))s.profile.skipRec=[];
   if(!Array.isArray(s.fixed))s.fixed=[];
   migrateState(s);
+  if(s.__repair){delete s.__repair;if(s.tx.length){reapplyRules(s);applyRentMonths(s,resolveAll(s));}}
   return s;
 }
 function mergeStates(L,R){
@@ -1197,7 +1338,7 @@ function parsePdfLines(lines,opt){
   return {rows,unrec,needYear,ctx};
 }
 
-if(typeof module!=="undefined"&&module.exports)module.exports={detectOwnCandidate,detectOwnNames,detectSalary,learnPass,incomeSplit,MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
+if(typeof module!=="undefined"&&module.exports)module.exports={ruleBreadth,reapplyRules,recurringBig,medianOf,kwMatch,kwParse,tok,fixPosts,applyRentMonths,MONTHS_DE,DEFKEYS,LEGACY_RULES,detectOwnCandidate,detectOwnNames,detectSalary,incomeSplit,MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK};
 
 /* ===== APP: Speicher, Sync, Oberfläche ===== */
 const $=s=>document.querySelector(s);
@@ -1297,9 +1438,9 @@ function vMonth(){
   });
   const rows=all.filter(r=>r.rf.ref>0||Math.abs(r.ist)>0.005).sort((a,b)=>{const rk=r=>r.it.goal?3:r.am==="r"?0:r.am==="y"?1:2;return rk(a)-rk(b)||b.q-a.q||b.ist-a.ist;});
   /* Zusammenfassung */
-  const spent=ag.fix+ag.var+ag.unsOut,left=ag.inc-ag.exp;
+  const spent=ag.fix+ag.var+ag.unsOut,left=ag.saldo;
   let projSpent=0;for(const r of all)if(groupOf(S,r.it.cats[0])!=="save")projSpent+=r.pr;projSpent+=canProj?ag.unsOut/pd*dim:ag.unsOut;
-  let h=`<p class="lead">Bisher <b>${fmt0(spent)}</b> ausgegeben${canProj?` · Prognose Monatsende <b>${fmt0(projSpent)}</b>`:""} · Einnahmen <b>${fmt0(ag.inc)}</b> · übrig <b class="${left<0?"neg":"pos"}">${sgn0(left).replace("+","")}</b></p>`;
+  let h=`<p class="lead">Bisher <b>${fmt0(spent)}</b> ausgegeben${canProj?` · Prognose Monatsende <b>${fmt0(projSpent)}</b>`:""} · Einnahmen <b>${fmt0(ag.inc)}</b>${ag.other>0.5?` · weitere Eingänge ${fmt0(ag.other)}`:""} · übrig <b class="${left<0?"neg":"pos"}">${sgn0(left).replace("+","")}</b></p>`;
   h+=accFilterHtml();
   {const cp=commonPeriod(S);if(cp&&cp.lastMonth&&ym!==cp.lastMonth)h+=`<button class="linkline" data-a="monthCommon">Zum letzten vollständigen Monat (${mLabel(cp.lastMonth)}, alle Konten)</button>`;}
   if(ag.n)h+=donutCard(SV,cm,ym);
@@ -1309,7 +1450,7 @@ function vMonth(){
   if(cur&&!canProj)subs.push("Prognose erst ab dem 8. des Monats");
   h+=`<p class="muted small">${subs.join(" · ")}</p>`;
   if(ag.n){const pT=ag.tx.filter(t=>t.amt>0),gh=pT.filter(t=>cm.get(t.h)===INCOME).reduce((s,t)=>s+t.amt,0);
-    h+=`<button class="linkline" data-a="einn">Einnahmen: ${fmt0(ag.inc)} aus ${pT.length} Buchungen (Gehalt: ${fmt0(gh)}) – Tippen für Details</button><button class="linkline" data-a="tab" data-t="avg">Ø pro Monat und Fixkosten ansehen</button>`;}
+    h+=`<button class="linkline" data-a="einn">Einnahmen: ${fmt0(ag.inc)} aus ${ag.incTx.length} Buchungen${ag.other>0.5?" · Weitere Eingänge: "+fmt0(ag.other):""} – Tippen für Details</button><button class="linkline" data-a="tab" data-t="avg">Ø pro Monat und Fixkosten ansehen</button>`;}
   if(!ag.n)h+=`<p class="empty">In diesem Monat gibt es keine Buchungen.</p>`;
   if(!S.budget.income&&!META.incSkip&&!S.tx.some(t=>cm.get(t.h)===INCOME)){
     const sc=detectSalary(S,cm);
@@ -1335,7 +1476,7 @@ function vMonth(){
   const st=accStatus(ym);let nt="";
   if(U.length)nt+=`<button class="line" data-a="tab" data-t="so"><span class="ln"><b>${U.length} Buchungen unsortiert${ag.unsOut?" ("+fmt0(ag.unsOut)+" in diesem Monat)":""}</b><small>${uIn?uIn+" Eingänge prüfen · ":""}Jetzt sortieren</small></span><span aria-hidden="true">›</span></button>`;
   if(ag.trans.length)nt+=`<button class="line" data-a="umb"><span class="ln"><b>Umbuchungen ignoriert: ${ag.trans.length} Buchungen, ${fmt0(ag.transSum)}</b><small>Übertrag zwischen eigenen Konten und Kreditkarte bezahlt, zählt nicht. Tippen zum Prüfen.</small></span><span aria-hidden="true">›</span></button>`;
-  if(ag.ins.length)nt+=`<button class="line" data-a="incList"><span class="ln"><b>Eingänge prüfen: ${ag.ins.length} Buchungen, ${fmt0(ag.insSum)}</b><small>Sie zählen schon als Einnahmen. Tippe, um dein Gehalt zu wählen.</small></span><span aria-hidden="true">›</span></button>`;
+  if(ag.ins.length)nt+=`<button class="line" data-a="incList"><span class="ln"><b>Weitere Eingänge (Rückzahlungen, Beiträge): ${ag.ins.length} Buchungen, ${fmt0(ag.insSum)}</b><small>Zählen nicht als Einnahmen, aber in Übrig. Tippen für Details oder um dein Gehalt zu wählen.</small></span><span aria-hidden="true">›</span></button>`;
   for(const w of st.warn)nt+=`<div class="line static warnt"><span class="ln"><b>⚠ ${w}</b></span></div>`;
   if(nt)h+=`<section class="card notes">${nt}</section>`;
   {const fxPlan=S.budget.items.filter(it=>isFixItem(S,it)&&!it.goal&&groupOf(S,it.cats[0])==="fix").reduce((s,it)=>s+(refOf(S,it,inc.v).plan||0),0);
@@ -1343,13 +1484,12 @@ function vMonth(){
   /* Saldo ehrlich aufteilen */
   if(ag.n){
     h+=`<section class="card"><h2 class="sec">So verteilt sich dein Geld</h2>
-    <div class="kv"><span>Einnahmen${ag.tradeIn?` (davon Trading-Rückfluss ${fmt0(ag.tradeIn)})`:""}${ag.unsIn?` (davon ${fmt0(ag.unsIn)} noch unsortiert)`:""}</span><b class="num pos">${fmt0(ag.inc)}</b></div>
+    <div class="kv"><span>Einnahmen (Gehalt u. a.)</span><b class="num pos">${fmt0(ag.inc)}</b></div>${ag.other>0.5?`<button class="kv klink" data-a="incList"><span>Weitere Eingänge (Rückzahlungen, Beiträge)</span><b class="num">+ ${fmt0(ag.other)}</b></button>`:""}
     <div class="kv"><span>Fixkosten</span><b class="num">− ${fmt0(ag.fix)}</b></div>
-    <div class="kv"><span>Variable Ausgaben</span><b class="num">− ${fmt0(ag.var)}</b></div>
-    <div class="kv"><span>Sparen / Anlegen (Sparen, Rücklagen, Trading)</span><b class="num">− ${fmt0(ag.save)}</b></div>
+    <div class="kv"><span>Variable Ausgaben</span><b class="num">− ${fmt0(ag.var)}</b></div>${ag.tradeOut?`<div class="kv warnrow"><span>davon Trading-Kosten</span><b class="num warnt">− ${fmt0(ag.tradeOut)}</b></div>`:""}
+    <div class="kv"><span>Sparen / Anlegen (Sparen, Rücklagen)</span><b class="num">− ${fmt0(ag.save)}</b></div>
     ${ag.unsOut?`<button class="kv klink" data-a="tab" data-t="so"><span>Unsortiert</span><b class="num">− ${fmt0(ag.unsOut)}</b></button>`:""}
     <div class="kv tot"><span>Übrig</span><b class="num ${left<0?"neg":"pos"}">${sgn0(left).replace("+","")}</b></div>
-    ${ag.tradeIn||ag.tradeOut?`<div class="kv small"><span>Trading netto (Rückfluss minus Kosten)</span><b class="num ${ag.tradeIn-ag.tradeOut<0?"neg":"pos"}">${sgn0(ag.tradeIn-ag.tradeOut).replace("+","+")}</b></div>`:""}
     </section>`;
   }
   /* Ampel-Liste */
@@ -1383,10 +1523,13 @@ function vAvg(){
   <div class="chips" role="group" aria-label="Zeitraum">${[[3,"Letzte 3"],[6,"Letzte 6"],[12,"Letzte 12"],[0,"Alle vollständigen"]].map(([n,l])=>`<button data-a="avgN" data-n="${n}" aria-pressed="${N===n}">${l}</button>`).join("")}</div>`;
   if(!R.accs.length)return h+`<div class="card"><p class="big">Noch kein vollständiger Monat.</p><p class="muted">Importiere einen Zeitraum, der mindestens einen ganzen Kalendermonat umfasst (vom 1. bis zum Monatsletzten).</p><button class="btn p w" data-a="tab" data-t="im">Zum Import</button></div>`;
   const line=(l,v,n,cls)=>`<div class="kv"><span>${l}<br>${ab(n)}</span><b class="num ${cls||""}">${fmt0(v)}</b></div>`;
-  h+=`<section class="card"><h2 class="sec">Pro Monat im Schnitt</h2>${avgDonut(R)}${line("Einnahmen pro Monat",R.inc,R.incN||R.nMin,"pos")}${line("Fixkosten pro Monat",R.fix,R.nMin)}${line("Variabel pro Monat",R.var,R.nMin)}${line("Sparen / Anlegen pro Monat",R.save,R.nMin)}${R.uns?line("Unsortiert pro Monat",R.uns,R.nMin):""}<div class="kv tot"><span>Übrig pro Monat</span><b class="num ${R.left<0?"neg":"pos"}">${R.left<0?"−":""}${fmt0(Math.abs(R.left))}</b></div></section>`;
+  h+=`<section class="card"><h2 class="sec">Pro Monat im Schnitt</h2>${avgDonut(R)}${line("Einnahmen pro Monat (Gehalt u. a.)",R.inc,R.incN||R.nMin,"pos")}${R.other>0.5?line("Weitere Eingänge (Rückzahlungen, Beiträge)",R.other,R.nMin):""}${line("Fixkosten pro Monat",R.fix,R.nMin)}${line("Variabel pro Monat",R.var,R.nMin)}${R.tradeCost>0.5?`<div class="kv warnrow"><span>davon Trading-Kosten</span><b class="num warnt">${fmt0(R.tradeCost)}</b></div>`:""}${line("Sparen / Anlegen pro Monat",R.save,R.nMin)}${R.uns?line("Unsortiert pro Monat",R.uns,R.nMin):""}<div class="kv tot"><span>Übrig pro Monat</span><b class="num ${R.left<0?"neg":"pos"}">${R.left<0?"−":""}${fmt0(Math.abs(R.left))}</b></div>${R.moved>0.5?`<p class="muted small">Auf andere eigene Konten verschoben: ${fmt0(R.moved)} pro Monat. Das zählt nicht als Ausgabe; dort liegen z. B. Versicherungen oder andere Fixkosten.</p>`:""}</section>`;
   const rowHtml=r=>{
     const it=S.budget.items.find(i=>i.cats.includes(r.cat)),pl=r.group==="fix"&&it?refOf(S,it,0).plan:null;
-    return `<div class="kv"><span>${esc(r.cat==="(unsortiert)"?"Unsortiert":catLabel(r.cat))}<br>${ab(r.n)}${pl>0?` <small class="${Math.abs(pl-r.avg)>Math.max(5,pl*0.1)?"warnt":"faint"}">· Plan ${fmt0(pl)} · real ${fmt0(r.avg)}</small>`:""}</span><b class="num">${fmt0(r.avg)}</b></div>`;
+    let sub=ab(r.n);
+    if(pl>0)sub+=` <small class="${Math.abs(pl-r.val)>Math.max(5,pl*0.1)?"warnt":"faint"}">· Plan ${fmt0(pl)} · real ${fmt0(r.val)}</small>`;
+    if(r.group==="fix"&&r.posts.length>1)sub+=`<br><small class="faint">${r.posts.map(p=>esc(p.name)+" "+fmt0(p.amt)).join(" · ")}</small>`;
+    return `<div class="kv"><span>${esc(r.cat==="(unsortiert)"?"Unsortiert":catLabel(r.cat))}<br>${sub}</span><b class="num ${r.cat==="Trading"?"warnt":""}">${fmt0(r.val)}</b></div>`;
   };
   for(const [g,t] of [["fix","Fixkosten pro Monat"],["var","Variable Ausgaben pro Monat"],["save","Sparen / Anlegen pro Monat"]]){
     const rs=R.rows.filter(r=>r.group===g);if(rs.length)h+=`<section class="card"><h2 class="sec">${t}</h2>${rs.map(rowHtml).join("")}</section>`;
@@ -1438,7 +1581,7 @@ function renderSheet(){
   }else if(sh.t==="catdet"){
     const it=S.budget.items[sh.i],ag=monthAgg(viewS(),ui.month,cm);
     const tx=it?it.cats.flatMap(c=>ag.byCat[c]?ag.byCat[c].tx:[]):[];
-    inner=`<p class="big">${esc(it?it.n:"")}</p><p class="muted small">${mLabel(ui.month)} · ${tx.length} Buchungen${it&&it.note?" · "+esc(it.note):""}</p>`+
+    inner=`<p class="big">${esc(it?it.n:"")}</p><p class="muted small">${mLabel(ui.month)} · ${tx.length} Buchungen${it&&it.note?" · "+esc(it.note):""}. Falsch einsortiert? Tippe die Buchung an und ändere die Kategorie.</p>`+
       groupTx(tx).map(g=>`<div class="gh"><b>${esc(g.name)}</b><span class="num">${fmt(g.sum)}</span></div>${g.tx.sort((a,b)=>a.d<b.d?1:-1).map(txRow).join("")}`).join("")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else if(sh.t==="add"){
@@ -1446,25 +1589,25 @@ function renderSheet(){
   }else if(sh.t==="seg"){
     const SVv=viewS(),r=segTx(SVv,ui.month,cm,sh.mode,sh.key);
     if(!r.seg){hide();return;}
-    inner=`<p class="big"><i class="dot" style="background:${r.seg.color}"></i>${esc(segLabel(sh.mode,sh.key))}</p><p class="muted small">${fmt0(r.seg.amt)} · ${pctTxt(r.seg.pct)} von ${fmt0(r.D.total)} · ${mLabel(ui.month)}</p>${r.list.map(txRow).join("")}<button class="btn w" data-a="sheetClose">Schließen</button>`;
+    inner=`<p class="big"><i class="dot" style="background:${r.seg.color}"></i>${esc(segLabel(sh.mode,sh.key))}</p><p class="muted small">${fmt0(r.seg.amt)} · ${pctTxt(r.seg.pct)} von ${fmt0(r.D.total)} · ${mLabel(ui.month)}. Falsch einsortiert? Buchung antippen und Kategorie ändern.</p>${r.list.map(txRow).join("")}<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else if(sh.t==="einn"){
-    const ag=monthAgg(viewS(),ui.month,cm),pos=ag.tx.filter(t=>t.amt>0).sort((a,b)=>b.amt-a.amt),sum=pos.reduce((s,t)=>s+t.amt,0);
+    const ag=monthAgg(viewS(),ui.month,cm),pos=ag.incTx.slice().sort((a,b)=>b.amt-a.amt),sum=pos.reduce((s,t)=>s+t.amt,0);
     const ex=ag.trans.filter(t=>t.amt>0).sort((a,b)=>b.amt-a.amt),bd=boundaryIncome(S,ui.month,cm);
     const shifted=S.tx.filter(t=>t.mo===ui.month&&t.d.slice(0,7)!==ui.month&&t.amt>0);
     const byA={};for(const t of pos)byA[t.a]=(byA[t.a]||0)+t.amt;
     const cn=t=>cm.get(t.h);
-    inner=`<p class="big">Einnahmen ${mLabel(ui.month)}: ${fmt(sum)}</p><p class="muted small">Alle ${pos.length} Buchungen, die in dieser Summe stehen. Jeder Eingang zählt, außer Umbuchungen.</p>`+
+    inner=`<p class="big">Einnahmen ${mLabel(ui.month)}: ${fmt(sum)}</p><p class="muted small">Einnahmen sind nur Gehalt und ähnliches Einkommen (Kategorie Einkommen), ${pos.length} Buchungen. Alle anderen Eingänge stehen unter Weitere Eingänge und zählen nicht als Einnahmen.</p>`+
       (pos.length?pos.map(t=>`<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${t.man?(t.rec?"⟳ ":"✎ "):""}${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,26))} <small class="faint">· ${esc(cn(t)==null?"unsortiert":catLabel(cn(t)))}${t.mo&&t.mo!==t.d.slice(0,7)?" · gebucht "+dShort(t.d):""}</small></span><span class="num pos">${fmt(t.amt)}</span></button>`).join(""):`<p class="muted">Keine Eingänge in diesem Monat.</p>`)+
       `<div class="kv tot"><span>Summe</span><b class="num pos">${fmt(sum)}</b></div>`+
       `<h3 class="sec">Nach Konto</h3>`+S.accounts.filter(a=>S.tx.some(t=>t.a===a.id)).map(a=>`<div class="kv small"><span>${esc(a.name)}</span><b class="num">${byA[a.id]?fmt0(byA[a.id]):"keine Eingänge"}</b></div>`).join("")+
-      `<h3 class="sec">Nicht mitgezählt (${ex.length})</h3>`+
+      `<h3 class="sec">Weitere Eingänge (${ag.ins.length})</h3>`+(ag.ins.length?ag.ins.slice().sort((a,b)=>b.amt-a.amt).map(txRow).join(""):`<p class="muted small">Keine.</p>`)+`<h3 class="sec">Nicht mitgezählt (${ex.length})</h3>`+
       (ex.length?ex.map(t=>`<div class="erow"><span class="rk">${dShort(t.d)} · ${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,24))}<br><small class="warnt">${isCardPay(t)?"Kreditkarte bezahlt":"Umbuchung zwischen eigenen Konten"}</small></span><b class="num">${fmt(t.amt)}</b><button class="btn s" data-a="cntInc" data-h="${esc(t.h)}">Doch als Einnahme zählen</button></div>`).join(""):`<p class="muted small">Keine positiven Buchungen ausgeschlossen. (Beim Import als Duplikat übersprungene Buchungen werden nicht gespeichert.)</p>`)+
       ((bd.length||shifted.length)?`<h3 class="sec">Gehalt zum Monatswechsel</h3><p class="muted small">Diese Gehälter wurden kurz vor Monatsende oder zu Monatsbeginn gebucht und stehen deshalb im Nachbarmonat.</p>`+bd.map(t=>`<div class="erow"><span class="rk">${dShort(t.d)} · ${esc(accName(t.a))} · ${esc((t.p||t.t).slice(0,24))}</span><b class="num">${fmt(t.amt)}</b><button class="btn s" data-a="moHere" data-h="${esc(t.h)}">In ${MON[+ui.month.slice(5,7)-1]} zählen</button></div>`).join("")+shifted.map(t=>`<div class="erow"><span class="rk">${dShort(t.d)} · ${esc((t.p||t.t).slice(0,24))} (hierher verschoben)</span><b class="num">${fmt(t.amt)}</b><button class="btn s" data-a="moReset" data-h="${esc(t.h)}">Zurück</button></div>`).join(""):"")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else if(sh.t==="inc"){
     const ag=monthAgg(viewS(),ui.month,cm),list=ag.ins.slice().sort((a,b)=>b.amt-a.amt);
     if(!list.length){hide();return;}
-    inner=`<p class="big">Eingänge prüfen</p><p class="muted small">${mLabel(ui.month)}: Diese Eingänge zählen schon als Einnahmen. Tippe auf dein Gehalt, dann merkt sich die App die Regel und kennt dein Einkommen.</p>`+
+    inner=`<p class="big">Weitere Eingänge</p><p class="muted small">${mLabel(ui.month)}: Rückzahlungen, Beiträge und andere Eingänge. Sie zählen nicht als Einnahmen, aber in Übrig. Ist dein Gehalt dabei, tippe darauf: dann merkt sich die App die Regel und kennt dein Einkommen.</p>`+
       list.map(t=>`<div class="erow"><button class="line" data-a="incPick" data-h="${esc(t.h)}" aria-label="Das ist mein Gehalt: ${esc((t.p||t.t).slice(0,30))}"><span class="ln"><b>${esc((t.p||t.t).slice(0,34))}</b><small>${dShort(t.d)} · ${esc(accName(t.a))} · Das ist mein Gehalt</small></span><span class="num pos">${fmt(t.amt)}</span></button><button class="btn s" data-a="tx" data-h="${esc(t.h)}" aria-label="Details">…</button></div>`).join("")+
       `<button class="btn w" data-a="sheetClose">Schließen</button>`;
   }else if(sh.t==="umb"){
@@ -1480,6 +1623,7 @@ function renderSheet(){
    <p class="muted small">${txs.length>1?txs.length+" Buchungen · Summe "+fmt(txs.reduce((s,x)=>s+x.amt,0)):dShort(t.d)+" · "+fmt(t.amt)+" · "+esc(accName(t.a))}<br>${esc((t.t||"").slice(0,120))}</p>
    ${cur===TRANSFER?`<p class="status">${isCardPay(t)?"Kreditkarte bezahlt: zählt nicht als Ausgabe, die Einkäufe stehen auf der Kreditkarte. So wird nichts doppelt gezählt.":"Umbuchung zwischen eigenen Konten: zählt weder als Ausgabe noch als Einnahme."}</p><button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Als normale Buchung behandeln</button>`:(t.nt?`<button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Wieder automatisch als Umbuchung erkennen</button>`:"")}
    ${t.man?`<div class="row"><button class="btn s p" data-a="${t.rec?"recEdit":"manEdit"}" data-h="${esc(t.h)}" data-id="${esc(t.rec||"")}">${t.rec?"Dauerposten bearbeiten":"✎ Bearbeiten"}</button></div>`:""}
+   <p class="muted small">Falsch einsortiert? Wähle unten die richtige Kategorie.</p>
    <div class="cgrid">${S.cats.map(c=>`<button class="${c===cur?"on":""}" data-a="setcat" data-c="${esc(c)}">${dot(c)}${esc(catLabel(c))}</button>`).join("")}</div>
    <label class="chk"><input type="checkbox" id="alw" ${sh.always===false?"":"checked"}> Für diesen Händler immer</label>
    <input id="alwk" value="${esc(kw)}" aria-label="Schlüsselwort für die Regel">
@@ -1543,7 +1687,7 @@ function vSettings(){
     (dg.length?dg.map(x=>`<div class="diag"><b>${esc(x.name)}</b><span>${x.n} Buchungen · ${dl(x.min)} bis ${dl(x.max)}</span><span>Saldo der Buchungen: <b>${fmt0(x.pos+x.neg)}</b> · <b class="pos">+${fmt0(x.pos)}</b> (${x.np} Eingänge) · <b>−${fmt0(-x.neg)}</b> (${x.nn} Ausgaben)</span>${x.np===0?`<span class="warnt">⚠ Keine Eingänge: Vorzeichen prüfen</span>`:x.nn===0?`<span class="warnt">⚠ Keine Ausgaben: Vorzeichen prüfen</span>`:""}<label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(x.id)}" ${x.inv?"checked":""}> Vorzeichen beim nächsten Import umkehren</label></div>`).join(""):`<p class="muted small">Noch keine Buchungen.</p>`));}
   h+=D("recur","Dauerposten ("+S.recur.length+")",`<p class="muted small">Dauerposten rechnen sich ab dem Startdatum in jedem Monat automatisch mit, bis zum Enddatum. Neue legst du mit dem Plus in der Monatsansicht an (Haken "Jeden Monat wiederholen").</p>`+
     (S.recur.length?S.recur.map(r=>`<div class="erow"><span class="rk">⟳ ${esc(r.n)}<br><small class="faint">${fmt(r.amt)} · ${esc(catLabel(r.cat))} · ab ${dl2(r.start)}${r.end?" bis "+dl2(r.end):""}</small></span><button class="btn s" data-a="recEdit" data-id="${esc(r.id)}">Bearbeiten</button><button class="btn s dang" data-a="recDel" data-id="${esc(r.id)}" aria-label="${esc(r.n)} löschen">×</button></div>`).join(""):`<p class="muted small">Noch keine Dauerposten.</p>`)+`<button class="btn w" data-a="addOpen">Neue Buchung oder Dauerposten</button>`);
-  h+=D("reset","Neu aufsetzen",`<p class="muted small">Löscht alle <b>importierten</b> Buchungen (${S.tx.filter(t=>!t.man).length}). Konten, Kategorien, Regeln, Plan, feste Kosten, Profil, Tresor, manuelle Buchungen und Dauerposten bleiben. Danach alle Konten für denselben Zeitraum neu laden.</p><button class="btn w dang" data-a="wipeTx">Nur Buchungen löschen (Einstellungen behalten)</button>`);
+  h+=D("reset","Neu aufsetzen",`<p class="muted small">Löscht alle <b>importierten</b> Buchungen (${S.tx.filter(t=>!t.man).length}). Konten, Kategorien, Regeln, Plan, feste Kosten, Profil, Tresor, manuelle Buchungen und Dauerposten bleiben. Danach alle Konten für denselben Zeitraum neu laden.</p><button class="btn w" data-a="reapply">Regeln neu anwenden</button><p class="muted small">Berechnet alle Zuordnungen neu, die aus Regeln stammen. Einzeln gesetzte Zuordnungen und manuelle Buchungen bleiben. Hilfreich, wenn Buchungen falsch einsortiert wurden.</p><button class="btn w dang" data-a="wipeTx">Nur Buchungen löschen (Einstellungen behalten)</button>`);
   h+=D("myname","Mein Name (Eigenüberweisungen erkennen)",`<p class="muted small">Überweisungen von und an dich selbst (zwischen deinen Konten) zählen weder als Einnahme noch als Ausgabe. Der Name wird beim Import aus den Daten abgeleitet. Hier kannst du ihn prüfen oder ergänzen (mehrere mit Komma trennen).</p><label class="fld">Mein Name<input data-ch="myNames" value="${esc((S.profile.myNames||[]).join(", "))}" placeholder="z. B. Max Mustermann" aria-label="Mein Name"></label><p class="muted small">Erkannte eigene Konten (IBAN): ${(S.profile.myIbans||[]).length}</p>`);
   h+=D("acc","Konten",S.accounts.filter(a=>!a.virtual).map(a=>`<div class="erow"><input data-ch="accName" data-id="${esc(a.id)}" value="${esc(a.name)}" aria-label="Kontoname"><label class="chk s"><input type="checkbox" data-ch="accInv" data-id="${esc(a.id)}" ${a.inv?"checked":""}> Vorz. umkehren</label><button class="btn s" data-a="accDel" data-id="${esc(a.id)}" aria-label="Konto ${esc(a.name)} löschen">Löschen</button></div>`).join("")+
     `<div class="erow"><input id="newAcc" placeholder="Neues Konto" aria-label="Neues Konto"><button class="btn s p" data-a="accAdd">Hinzufügen</button></div>`);
@@ -1553,7 +1697,7 @@ function vSettings(){
   h+=D("rul","Regeln ("+S.rules.length+")",`<p class="muted small">Schlüsselwort (Groß/Klein egal) im Empfänger oder Zweck. ^ am Anfang = Wortanfang, $ am Ende = Wortende. Erste passende Regel zählt, neue stehen oben.</p>
     <input id="ruleQ" placeholder="Regeln suchen" value="${esc(ui.ruleQ)}" aria-label="Regeln suchen">
     <div class="erow"><input id="newRk" placeholder="Schlüsselwort" aria-label="Schlüsselwort"><select id="newRc" aria-label="Kategorie">${catOpts("")}</select><button class="btn s p" data-a="ruleAdd">Neu</button></div>`+
-    rl.slice(0,60).map(({r,i})=>`<div class="erow"><span class="rk">${esc(r.k)}</span><span class="ra">→ ${esc(catLabel(r.c))}</span><button class="btn s" data-a="ruleDel" data-i="${i}" aria-label="Regel ${esc(r.k)} löschen">×</button></div>`).join("")+(rl.length>60?`<p class="muted small">… ${rl.length-60} weitere, Suche nutzen.</p>`:"")+
+    rl.slice(0,60).map(({r,i})=>`<div class="erow"><span class="rk">${esc(r.k)}${ruleBreadth(S,r.k).broad?` <small class="warnt" title="Diese Regel trifft sehr viele Buchungen">⚠ trifft sehr viele Buchungen</small>`:""}</span><span class="ra">→ ${esc(catLabel(r.c))}</span><button class="btn s" data-a="ruleDel" data-i="${i}" aria-label="Regel ${esc(r.k)} löschen">×</button></div>`).join("")+(rl.length>60?`<p class="muted small">… ${rl.length-60} weitere, Suche nutzen.</p>`:"")+
     `<button class="btn w" data-a="ruleDefaults">Standardregeln ergänzen</button>`);
   const cm=cmap(),inc=effIncome(S,ui.month,cm);
   h+=D("bud","Richtwerte &amp; Einkommen",`<p class="muted small">Richtwert = dein Plan in Euro. Fehlt ein Plan, gilt der Durchschnitt Deutschland (grobe Orientierung in Prozent vom Netto, kein amtlicher Wert) und wird als "Standardwert" markiert.</p>
@@ -1577,7 +1721,7 @@ function vSettings(){
     (sy?`<button class="btn w" data-a="syNow">Jetzt synchronisieren</button><button class="btn w" data-a="syOff">Sync trennen</button>`:
     `<label class="fld">Sync-Passphrase<input type="password" id="syPass" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
      <button class="btn p w" data-a="syNew">Sync einrichten</button><button class="btn w" data-a="syJoin">Mit bestehender Passphrase verbinden</button>`));
-  h+=`<p class="muted small cen">Finanzplaner v8 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
+  h+=`<p class="muted small cen">Finanzplaner v10 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
   return h;
 }
 
@@ -1661,6 +1805,7 @@ function impCommit(){
   mutate(()=>{for(const r of nw)S.tx.push({h:r.h,a:I.acc,d:r.d,amt:r.amt,p:r.p,t:r.t,b:r.b,o:r.o,g:r.g,ib:r.ib,u:Date.now()});
     const own=detectOwnNames(I.rows);
     if(own.names.length){S.profile.myNames=[...new Set([...(S.profile.myNames||[]),...own.names])].slice(0,5);S.profile.myIbans=[...new Set([...(S.profile.myIbans||[]),...own.ibans])].slice(0,20);}
+    applyRentMonths(S,resolveAll(S));
     ui.month=lastDataMonth()||nowYM();
     I.stage="in";I.rows=[];I.msg="";},true);
   const hs=new Set(nw.map(r=>r.h)),cm=cmap(),uns=S.tx.filter(t=>hs.has(t.h)&&cm.get(t.h)==null).length;
@@ -1669,6 +1814,10 @@ function impCommit(){
 
 /* ---------- Aktionen (Klicks) ---------- */
 const ACT={
+  reapply:()=>{
+    if(!confirm("Regeln neu anwenden?\n\nAlle Zuordnungen, die aus Regeln stammen, werden neu berechnet. Einzeln von dir gesetzte Zuordnungen und manuelle Buchungen bleiben."))return;
+    let n=0;mutate(()=>{n=reapplyRules(S);applyRentMonths(S,resolveAll(S));},false);toast(n+" Zuordnungen neu berechnet");
+  },
   ownYes:el=>mutate(()=>{S.profile.myNames=[...new Set([...(S.profile.myNames||[]),el.dataset.k])];},true),
   ownNo:el=>mutate(()=>{S.profile.skipNames=[...(S.profile.skipNames||[]),el.dataset.k];},true),
   salYes:el=>{const sc=detectSalary(S,cmap());if(!sc||sc.k!==el.dataset.k)return;mutate(()=>{addRule(sc.k,INCOME,{in:1});if(!(S.profile.income>0))S.profile.income=sc.amt;},true);toast("Gehalt erkannt: Regel auf den Absender angelegt");},
@@ -1694,7 +1843,8 @@ const ACT={
   sortCat:el=>{
     const mode=ui.sort.mode,key=el.dataset.k,c=el.dataset.c,kw=(($("#alwk")||{}).value||key).trim();
     const g=sortLists()[mode==="in"?"inn":"out"].find(x=>x.k===key);if(!g)return;
-    mutate(()=>{for(const t of g.tx){t.c=c;t.u=Date.now();}if(kw)addRule(kw,c);ui.sort.done[mode]++;},true);
+    let mk=!!kw;if(mk){const b=ruleBreadth(S,kw);if(b.broad&&!confirm("Diese Regel trifft sehr viele Buchungen ("+b.n+" Buchungen, "+b.d+" Händler"+(b.short?", Stichwort sehr kurz":"")+"). Trotzdem für alle anlegen?"))mk=false;}
+    mutate(()=>{for(const t of g.tx){t.c=c;t.rl=1;t.u=Date.now();}if(mk)addRule(kw,c);ui.sort.done[mode]++;},true);
   },
   tab:el=>{ui.tab=el.dataset.t;render();window.scrollTo(0,0);},
   mprev:()=>{ui.month=shiftYM(ui.month,-1);ui.openCat=null;render();},
@@ -1706,11 +1856,13 @@ const ACT={
   sheetClose:()=>{ui.sheet=null;render();},
   setcat:el=>{
     const sh=ui.sheet,c=el.dataset.c,always=$("#alw")&&$("#alw").checked,kw=($("#alwk")||{}).value||"";
+    let mk=!!(c&&always&&kw.trim());
+    if(mk){const b=ruleBreadth(S,kw);if(b.broad&&!confirm("Diese Regel trifft sehr viele Buchungen ("+b.n+" Buchungen, "+b.d+" Händler"+(b.short?", Stichwort sehr kurz":"")+"). Trotzdem für alle anlegen?"))mk=false;}
     mutate(()=>{
-      for(const h of sh.hs){const t=S.tx.find(x=>x.h===h);if(t){t.c=c||undefined;t.u=Date.now();}}
-      if(c&&always&&kw.trim()){addRule(kw,c);for(const t of S.tx)if(!t.c){/* Regel greift automatisch */}}
+      for(const h of sh.hs){const t=S.tx.find(x=>x.h===h);if(t){t.c=c||undefined;t.u=Date.now();if(c){if(mk||sh.hs.length>1){t.rl=1;t.mn=undefined;}else{t.mn=1;t.rl=undefined;}}else{t.mn=undefined;t.rl=undefined;}}}
+      if(mk)addRule(kw,c);
       ui.sheet=null;
-    },!!(c&&always&&kw.trim()));
+    },mk);
     toast(c?"Kategorie: "+c+(always?" (Regel angelegt)":""):"Automatisch zugeordnet");
   },
   txDel:el=>{if(!confirm("Diese Buchung löschen?"))return;mutate(()=>{S.tx=S.tx.filter(t=>t.h!==el.dataset.h);S.del.push(el.dataset.h);ui.sheet=null;},true);},
@@ -1881,7 +2033,7 @@ function accFilterHtml(){
   return `<div class="chips" role="group" aria-label="Konto filtern"><button data-a="accF" data-id="all" aria-pressed="${ui.acc==="all"}">Alle Konten</button>${accs.map(a=>`<button data-a="accF" data-id="${esc(a.id)}" aria-pressed="${ui.acc===a.id}">${esc(a.name)}</button>`).join("")}</div>`+
     (ui.acc!=="all"?`<p class="muted small">Nur ${esc(accName(ui.acc))}. Umbuchungen werden weiter über alle Konten erkannt.</p>`:"");
 }
-const segLabel=(mode,key)=>key==="(unsortiert)"?"Unsortiert":key==="__more"?"Weitere":mode==="acc"?accName(key):catLabel(key);
+const segLabel=(mode,key)=>key==="(unsortiert)"?"Unsortiert":key==="__more"?"Weitere":key==="__other"?"Weitere Eingänge":mode==="acc"?accName(key):catLabel(key);
 const pctTxt=p=>(p<10?p.toFixed(1).replace(".",","):String(Math.round(p)))+" %";
 function segTx(SV,ym,cm,mode,key){
   const D=donutData(SV,ym,cm,mode),seg=D.segs.find(s=>s.key===key);
