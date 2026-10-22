@@ -3,7 +3,7 @@
 Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics, keine Drittanbieter-Skripte außer Firebase (gstatic) und Google Fonts.
 
 ## Deployment
-Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v11`) lädt Netz zuerst (3 s), dann Cache.
+Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v12`) lädt Netz zuerst (3 s), dann Cache.
 
 ## CSV-Import
 Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfen (neu/Duplikate), übernehmen.
@@ -41,7 +41,7 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v11` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v12` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
@@ -130,3 +130,30 @@ So drehst du Plus/Minus um:
 5. Eine einzeln gesetzte Kategorie bleibt beim Umdrehen; automatische Zuordnungen (Gehalt, Miete, Regeln) werden neu berechnet.
 
 Technik: Felder `fl` (umgedreht), `oa` (Originalbetrag), `pc` (vorherige automatische Kategorie), `u` für den Sync-Abgleich; Schema bleibt 6 (nur zusätzliche Felder, ältere App-Versionen sehen einfach den umgedrehten Betrag). Re-Import: gleicher Hash, wird als Duplikat erkannt (mit Originalvorzeichen), die Umdrehung bleibt. Dauerposten sind ausgenommen. Neu erkannt: Spalte "Sender / Empfänger" als Gegenüber, "Buchungstext"/"Type" zur Plausibilitätsprüfung, Typ-Wörter Soll/Haben/Debit/Credit. Tests: `test_v11.js` (40 Prüfungen) und Browser-Test (Cache `finanzplaner-v11`).
+
+## Version 12: Duplikate, PDF-Vorzeichen, Gehalt und Tanken nachvollziehbar
+
+**Was falsch war (an echten Exporten nachgestellt):**
+- **Überlappende CSV-Exporte:** Neuere DKB-Exporte kürzen Händlernamen (z. B. "AMZN Mktp…" → "Amazon", "OIL.144…" → "OIL! Tankstellen"). Die alte Duplikat-Prüfung brauchte ein gemeinsames Wort ab 4 Buchstaben, dadurch rutschten Buchungen doppelt durch (auch eine Tankung).
+- **PDF-Import (DKB-Umsatzliste):** Die IBAN-Zeile beendete die Buchung, der Verwendungszweck ("Lohn/Gehalt", "Miete …") ging verloren. Beträge ohne Zeichen (Eingänge) wurden als Ausgabe geschätzt, und ein Bindestrich am Namensende ("…-Straße- 3.130,72") wurde als Minus gelesen. Folge: Gehalt und Eingänge erschienen als Ausgaben, nach CSV-Import zusätzlich doppelt.
+- **"Dein Gehalt"** war der Durchschnitt der letzten 3 Monate inklusive Sonderzahlungen und Förderung (z. B. AFBG) und überstimmte das eigene Plan-Gehalt.
+- **Startmonat:** Die App öffnete den letzten vollständig abgedeckten Monat (meist den Vormonat), der wie der laufende Monat aussah.
+- **Daueraufträge auf eigene Konten** mit Namen wie "Versicherungen Wohnung" zählten als Versicherung statt als Umbuchung; KFZ-Versicherungen landeten unter Auto/Parken, "Vers. AG" blieb unsortiert, Sanifair-Toiletten zählten als Tanken, "C&A" wurde nicht erkannt.
+
+**Was v12 macht:**
+- **Duplikate beim Import:** Kundenreferenz (gleich = Duplikat, verschieden = nie Duplikat), gleicher Händler (Wort ab 3 Buchstaben, Ziffern ignoriert, gleicher Namensanfang), lange Referenznummern (PayPal), PDF gegen CSV über den Verwendungszweck. Bei einem erkannten Re-Export (mindestens 80 % schon vorhanden) zählt auch der gleiche Verwendungszweck bei umbenanntem Händler. Zwei Käufe beim selben Händler mit verschiedenem Kartendatum bleiben zwei Buchungen.
+- **CSV verbessert PDF:** Trifft eine CSV-Zeile eine vorhandene PDF-Buchung, bekommt diese Händler, Verwendungszweck, Referenz und das richtige Vorzeichen (Hash und eigene Zuordnungen bleiben). In der Vorschau steht "Davon … genauere Daten".
+- **PDF-Parser:** IBAN/BIC-Zeilen beenden keine Buchung mehr; Vorzeichen-Konvention je Dokument (tragen Ausgaben ein Minus und nichts ein Plus/S/H, sind Beträge ohne Zeichen Eingänge); Bindestrich am Wortende ist kein Minus.
+- **Vorgemerkt:** wird getrennt gespeichert (`pend`), zählt nicht, steht im Kategorie-Sheet unter "Vorgemerkt". Die neueste Datei eines Kontos ersetzt die Vormerkungen (Reservierung an der Zapfsäule → endgültiger Betrag).
+- **Warnung beim Import**, wenn die Datei schon zu großen Teilen in einem anderen Konto steckt ("In Konto X importieren").
+- **Mehr, "Duplikate prüfen und bereinigen":** zeigt sichere Duplikate mit Grund (gleiche Referenz, Händler umbenannt, PDF/CSV, PDF mit falschem Vorzeichen, dasselbe Bankkonto unter zwei Namen) und unsichere (runde Beträge, nur gleicher Text; werden nie automatisch entfernt). Entfernen mit Rückfrage, Vorher/Nachher (Anzahl, Umsatzvolumen), eigene Zuordnungen wandern auf die behaltene Buchung, manuelle Buchungen und Dauerposten bleiben, entfernte Kopien kommen per Re-Import oder Sync nicht zurück. Ein zweiter Lauf findet nichts mehr.
+- **Einnahmen:** Monatszeile "Einnahmen: X (Gehalt · Förderung)". Das Einnahmen-Sheet gliedert nach Gehalt / Förderung / Sonstiges und Weitere Eingänge je Quelle mit Anzahl und Konto, warnt bei gleichem Betrag in zwei Konten und zeigt das Gehalt der letzten Monate mit Median, Spanne und möglichen Sonderzahlungen. "Dein Gehalt" = Ø der letzten 3 normalen Gehaltsmonate (ohne Förderung, ohne Sonderzahlungen über 125 % des Medians); dieselbe Gehaltszahlung in zwei Konten zählt einmal. Knopf "Stattdessen mit … rechnen (dein Plan)".
+- **Kategorie-Sheet:** Summe, Anzahl, kleinster/größter Betrag, Durchschnitt, Aufteilung nach Konto, jede Buchung mit Datum, Konto und Status (gebucht, aus PDF, manuell, vorgemerkt), Hinweis bei gleichen Beträgen in zwei Konten.
+- **Start im laufenden Monat**, Überschrift mit Monat und "laufender Monat, Buchungen bis …".
+- **Regeln:** Dauerauftrag an ein eigenes Konto (Gegenbuchung mit gleichem Betrag und Verwendungszweck, max. 3 Tage) = Umbuchung; KFZ nur ohne Versicherungs-Wort; neue Schlüssel für Versicherungen (Vers. AG, VHV, Barmenia, …), Sanifair (Sonstiges), C&A, Street Food.
+
+**Daten:** Schema bleibt 6. Neue optionale Felder: `ref`, `src`, `gs` an Buchungen, `pend`, `pendMax`, `pendTs`, `r12` am Zustand. Einmalige Regel-Migration (Marker `r12`): geänderte Standardregeln ersetzt, eigene Regeln bleiben vorn, gelöschte Standardregeln bleiben gelöscht; Buchungen, Zuordnungen und Einstellungen unverändert. Ältere App-Versionen lesen die Daten weiter.
+
+**Für bestehende Daten:** Nach dem Update Mehr, "Duplikate prüfen und bereinigen" ausführen. Wurden früher PDFs importiert, danach die neuesten CSV-Exporte der Konten (ganzer Zeitraum) noch einmal importieren: alte PDF-Buchungen bekommen dabei die CSV-Daten und das richtige Vorzeichen.
+
+Tests: `test_v12.js` (44 Prüfungen, synthetisch), alle älteren Suiten unverändert grün, Browser-Test (Cache `finanzplaner-v12`).
