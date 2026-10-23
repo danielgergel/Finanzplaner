@@ -7,7 +7,8 @@ const DEF_CATS=["Einkommen","Eigene Überträge","Miete","Lebensmittel","Drogeri
 /* Standardregeln, geordnet nach Spezifitaet (erste passende zaehlt).
    Schluessel arbeiten auf WOERTERN (Gross/Klein, Umlaute und Satzzeichen normalisiert), nie auf Teilstrings.
    "A|B" Alternativen, "A B" Wortfolge, "A+B" beide Woerter irgendwo, "WORT!AUS1!AUS2" nicht, wenn AUS1/AUS2 vorkommt,
-   "*ENDE" / "ANFANG*" / "*MITTE*" Wortteil nur bei zusammengesetzten deutschen Woertern. Optionen: pos, neg, min (Betrag). */
+   "*ENDE" / "ANFANG*" / "*MITTE*" Wortteil nur bei zusammengesetzten deutschen Woertern (ab 4 Buchstaben).
+   Woerter mit hoechstens 3 Buchstaben (dm, o2, jet) zaehlen nur als ganzes Wort, nie innerhalb eines anderen. Optionen: pos, neg, min (Betrag). */
 const DEF_RULES=[
 ["Rücklagen","RUECKLAGE|RUECKLAGEN"],
 ["Eigene Überträge","PAYPAL INSTANT TRANSFER|INSTANT TRANSFER|AUSZAHLUNG PAYPAL|UEBERWEISUNG VON PAYPAL|PAYPAL AUSZAHLUNG"],
@@ -289,7 +290,7 @@ function partMatch(p,toks){
     let ok=true;
     for(let j=0;j<n;j++){
       const t=toks[i+j],w=p.seq[j];
-      const hit=n===1?(p.pre&&p.suf?t.includes(w):p.pre?t.endsWith(w):p.suf?t.startsWith(w):t===w):t===w;
+      const hit=w.length<=3||n!==1?t===w:(p.pre&&p.suf?t.includes(w):p.pre?t.endsWith(w):p.suf?t.startsWith(w):t===w);
       if(!hit){ok=false;break;}
     }
     if(ok)return true;
@@ -317,6 +318,48 @@ const isCardPay=t=>/AMEX|AMERICAN EXPRESS|KREDITKARTE|ZAHLUNG ERHALTEN|AEME/.tes
 const SAL_TOK=toks=>toks.some(t=>t.startsWith("GEHALT")||t==="LOHN"||t==="BEZUEGE"||t==="BESOLDUNG"||t==="ARBEITGEBER"||t==="RENTE");
 const HOUS_TXT=toks=>toks.some(t=>t.endsWith("MIETE")||t==="MIETZAHLUNG"||t==="HAUSVERWALTUNG"||t==="VERMIETER"||t==="WOHNUNGSMIETE");
 const HOUS_PAY=toks=>toks.some(t=>t==="HAUSVERWALTUNG"||t==="VERMIETER"||t.startsWith("WOHNUNGSBAU")||t.startsWith("IMMOBILIEN")||t==="WOHNBAU"||t==="GENOSSENSCHAFT");
+/* Kategorie-Woerter, die im Verwendungszweck als ganzes Wort stehen. Sie schlagen Laden-Regeln (dm, REWE, PayPal).
+   Zusammensetzungen nur bei langen, eindeutigen Woertern (Kaltmiete, Kfzversicherung), nie bei dm/o2/jet. */
+const PURPOSE_MAP=[
+  ["Miete",["MIETE","KALTMIETE","WARMMIETE","MIETZAHLUNG","WOHNUNGSMIETE","HAUSVERWALTUNG","VERMIETER"]],
+  ["Versicherungen",["VERSICHERUNG","VERSICHERUNGEN","HAFTPFLICHT","KRANKENKASSE"]],
+  ["Strom & Nebenkosten",["NEBENKOSTEN","HEIZKOSTEN","FERNWAERME","STROM","STADTWERKE","GRUNDSTEUER","MUELLABFUHR","WASSER","GAS"]],
+  ["Lebensmittel",["LEBENSMITTEL"]],
+  ["Drogerie",["DROGERIE"]],
+  ["Tanken",["TANKEN","TANKSTELLE"]],
+  ["GEZ/Rundfunk",["GEZ","RUNDFUNK","BEITRAGSSERVICE"]],
+  ["Friseur",["FRISEUR"]],
+  ["Weiterbildung",["WEITERBILDUNG","FORTBILDUNG"]],
+  ["Sparen",["SPAREN","SPARPLAN"]],
+  ["Rücklagen",["RUECKLAGE","RUECKLAGEN"]],
+  ["Abos",["ABONNEMENT","ABOS"]],
+  ["Bekleidung",["BEKLEIDUNG"]],
+  ["Freizeit",["FREIZEIT"]],
+  ["Bargeld",["BARGELDAUSZAHLUNG","GELDAUTOMAT"]]
+];
+const PURPOSE_COMPOUND=new Set(["MIETE","VERSICHERUNG","VERSICHERUNGEN","HAFTPFLICHT","KRANKENKASSE","NEBENKOSTEN","HEIZKOSTEN","FERNWAERME","MIETZAHLUNG","WOHNUNGSMIETE","HAUSVERWALTUNG","FIXKOSTEN","FIXKOSTENANTEIL"]);
+const FIX_WORDS=["FIXKOSTEN","FIXKOSTENANTEIL"];
+const SHOP_CATS=new Set(["Drogerie","Lebensmittel","Online-Shopping","Essen gehen","Bekleidung","Freizeit","Friseur","Tanken","Bargeld","Gesundheit","Reisen"]);
+function wordHit(toks,w){
+  for(const t of toks){
+    if(t===w)return true;
+    if(w.length<=3||!PURPOSE_COMPOUND.has(w)||t.length<=w.length)continue;
+    if(t.startsWith(w)||t.endsWith(w)||(w.length>=8&&t.includes(w)))return true;
+  }
+  return false;
+}
+function purposeSignal(text){
+  const toks=tok(text||"");
+  for(const [cat,words] of PURPOSE_MAP)if(words.some(w=>wordHit(toks,w)))return {cat};
+  if(FIX_WORDS.some(w=>wordHit(toks,w)))return {fix:1};
+  return null;
+}
+function purposeKey(t){
+  const stop=new Set(["UND","ODER","DER","DIE","DAS","DEN","DEM","DES","EIN","EINE","EINER","EINEM","VON","MIT","FUER","FUR","AUF","AUS","ZUM","ZUR","SEPA","SVWZ","UEBERWEISUNG","DAUERAUFTRAG","LASTSCHRIFT","RECHNUNG","ZAHLUNG","BETRAG","EURO","EUR","KARTE","KARTENZAHLUNG","GUTSCHRIFT","BASISLASTSCHRIFT","FOLGELASTSCHRIFT","EINZELLASTSCHRIFT","REFERENZ","KUNDENREFERENZ","MANDATSREFERENZ","GLAEUBIGER","NOTPROVIDED","EREF","KREF","MREF","WOHNUNG"]);
+  const words=tok(t&&t.t||"").filter(w=>w.length>=4&&!stop.has(w)&&!/^\d+$/.test(w));
+  const prefer=["FIXKOSTEN","FIXKOSTENANTEIL","MIETE","KALTMIETE","WARMMIETE","MIETZAHLUNG","WOHNUNGSMIETE","VERSICHERUNG","VERSICHERUNGEN","HAFTPFLICHT","NEBENKOSTEN","HEIZKOSTEN"];
+  return words.find(w=>prefer.some(p=>wordHit([w],p)))||words[0]||"";
+}
 /* Beträge ab 400 Euro im Monatsturnus (gleicher Empfaenger, +-10 %, mindestens 3 Monate): nur fuer unsortierte Buchungen -> Miete */
 function recurringBig(S){
   const g=new Map(),out=new Set();
@@ -336,8 +379,9 @@ function ruleHit(rules,amt,toksAll,toksP){
   }
   return null;
 }
-/* Pruefreihenfolge: (1) Einzelzuordnung des Nutzers, Nutzerregeln; (2) Gehalt; (3) Wohnen (Vermieter-Woerter);
-   (4) eigene Konten/Umbuchung (Name, IBAN; eine Nutzerregel darf das uebersteuern); (5) Standardregeln nach Spezifitaet; (6) Rest unsortiert. */
+/* Pruefreihenfolge: (1) Einzelzuordnung des Nutzers, Nutzerregeln; (2) Kategorie-Wort im Verwendungszweck
+   (Miete, Versicherung, Fixkosten schlaegt dm); (3) Standardregeln; (4) Gehalt; (5) Wohnen;
+   (6) eigene Konten/Umbuchung; (7) Rest unsortiert. */
 function resolveAll(S){
   const cats=new Set(S.cats),userR=[],defR=[];
   for(const r of S.rules){
@@ -354,7 +398,12 @@ function resolveAll(S){
     if(t.c&&cats.has(t.c)){c=t.c;manual.add(t.h);}
     else{
       const h1=ruleHit(userR,t.amt,ta,tp);
-      if(h1){c=h1.c;user=true;}else{const h2=ruleHit(defR,t.amt,ta,tp);if(h2)c=h2.c;}
+      if(h1){c=h1.c;user=true;}
+      else{
+        const sig=purposeSignal(t.t||"");
+        if(sig&&sig.cat&&cats.has(sig.cat))c=sig.cat;
+        else{const h2=ruleHit(defR,t.amt,ta,tp);if(h2&&!(sig&&sig.fix&&SHOP_CATS.has(h2.c)))c=h2.c;}
+      }
     }
     if(t.nt&&c===TRANSFER&&!manual.has(t.h))c=null; /* vom Nutzer zurückgeholt */
     const auto=!manual.has(t.h);

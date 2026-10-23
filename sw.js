@@ -1,5 +1,5 @@
 /* Service Worker für den Finanzplaner: nach einem Besuch liegen App, Schriften und Bibliotheken im Cache und starten ohne Internet. */
-const V="finanzplaner-v14";
+const V="finanzplaner-v15";
 const CORE=["./","index.html","manifest.json","style.css","fonts/fonts.css","fonts/OFL.txt","theme.js","core.js","app.js","firebase-init.js","apple-touch-icon.png","vendor/firebase-app.js","vendor/firebase-firestore.js","vendor/pdf.min.js","vendor/pdf.worker.min.js","fonts/7cHpv4kjgoGqM7E_A8s5ynghnQci.woff2","fonts/7cHpv4kjgoGqM7E_Ass5ynghnQci.woff2","fonts/7cHpv4kjgoGqM7E_DMs5ynghnQ.woff2","fonts/7cHqv4kjgoGqM7E3_-gs6Fostz0rdom9.woff2","fonts/7cHqv4kjgoGqM7E3_-gs6Vostz0rdom9.woff2","fonts/7cHqv4kjgoGqM7E3_-gs51ostz0rdg.woff2","fonts/7cHqv4kjgoGqM7E30-8s6Fostz0rdom9.woff2","fonts/7cHqv4kjgoGqM7E30-8s6Vostz0rdom9.woff2","fonts/7cHqv4kjgoGqM7E30-8s51ostz0rdg.woff2","fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B4873z3nWuYMBYrp0xg.woff2","fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B4873z3jWuYMBYrp0xg.woff2","fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B4873z3bWuYMBYro.woff2","fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B46r2z3nWuYMBYrp0xg.woff2","fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B46r2z3jWuYMBYrp0xg.woff2","fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B46r2z3bWuYMBYro.woff2"];
 self.addEventListener("install",e=>{
   e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting()));
