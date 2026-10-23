@@ -1,9 +1,9 @@
 # Finanzplaner (iPhone-PWA)
 
-Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics. Firebase 10.12.2 und pdf.js 3.11.174 liegen im Ordner `vendor/` (keine Skripte von einem CDN). Schriften kommen von Google Fonts.
+Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Nach einem Besuch mit Internet läuft die App auch ohne Netz, auch vom Home-Bildschirm. Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics. Firebase 10.12.2, pdf.js 3.11.174 und die Schriften Barlow liegen im Projekt (kein CDN).
 
 ## Deployment
-Diese Dateien auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm": `index.html`, `style.css`, `theme.js`, `core.js`, `app.js`, `firebase-init.js`, `sw.js`, `apple-touch-icon.png` und der Ordner `vendor/`. `test/` wird zum Betrieb nicht gebraucht. Der Service Worker (`finanzplaner-v13`) lädt Netz zuerst (3 s), dann Cache, und speichert die genannten Dateien.
+Diese Dateien auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm": `index.html`, `manifest.json`, `style.css`, `theme.js`, `core.js`, `app.js`, `firebase-init.js`, `sw.js`, `apple-touch-icon.png` und die Ordner `vendor/` und `fonts/`. `test/` wird zum Betrieb nicht gebraucht. Der Service Worker (`finanzplaner-v15`) speichert diese Dateien beim ersten Besuch. Mit Netz holt er Updates (höchstens 3 Sekunden Wartezeit), ohne Netz kommt sofort der gespeicherte Stand.
 
 ## Tests
 Die Kernlogik (Parser, Kategorien, Ampel, Sparziele, Abo-Radar, Jahresrückblick, CSV) liegt in `core.js` und lässt sich ohne Browser prüfen:
@@ -55,7 +55,7 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 aus `vendor/`, vom Service Worker `finanzplaner-v13` mitgecacht). Die PDF selbst wird nirgends hochgeladen. Der Worker läuft ohne `eval`, damit die Content-Security-Policy streng bleiben kann.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 aus `vendor/`, vom Service Worker `finanzplaner-v15` mitgecacht). Die PDF selbst wird nirgends hochgeladen. Der Worker läuft ohne `eval`, damit die Content-Security-Policy streng bleiben kann.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
@@ -189,3 +189,13 @@ Die früher erwähnte Datei `test_v12.js` liegt nicht im Repository. Die aktuell
 **CSV-Export** (Mehr, Daten, und im Kategorie-Sheet „CSV für JAHR“). Semikolon, Dezimalkomma, UTF-8 mit BOM, Spalten Datum, Konto, Kategorie, Händler, Verwendungszweck, Betrag. Filter: Kategorie, Jahr, nur Ausgaben oder nur Eingänge. Umbuchungen fehlen, außer die Kategorie ist ausdrücklich gewählt.
 
 **Budget-Hinweis.** Wird eine Kategorie neu gelb oder rot (oder von gelb zu rot), erscheint in der Monatsansicht eine Karte. Ausblenden merkt sich die Stufe für diesen Monat; wird es schlimmer oder wieder grün und dann erneut gelb, kommt der Hinweis zurück. „Auch als Mitteilung“ bzw. Mehr, Darstellung, Mitteilungen einschalten nutzt die Notification-API dieses Geräts, nur nach Tippen und nur solange die App geöffnet ist. Web-Push im Hintergrund braucht einen Server und ist nicht enthalten.
+
+## Offline (Version 15)
+
+Einmal mit Internet öffnen (Safari: Teilen, Zum Home-Bildschirm). Danach gehen Buchungen, Kategorien, Ampel, Sparziele, Abo-Radar, Jahresrückblick, CSV-Export, PDF-Import und die Schriften ohne Netz. Der PDF-Worker liegt lokal im Cache.
+
+Steht im Verwendungszweck ein Kategorie-Wort wie Fixkosten, Miete oder Versicherung, gewinnt das gegen einen Laden-Namen (zum Beispiel dm). Eine Buchung antippen, Kategorie wählen, dann „Auch künftig so einsortieren“ oder „Alle ähnlichen jetzt ändern“. Die Regel liegt unter Mehr, Regeln, auf dem Gerät, und wird mit den anderen Daten synchronisiert.
+
+Firestore-Sync, wenn eine Passphrase eingerichtet ist: die App speichert Änderungen lokal (IndexedDB, auch die verschlüsselte Sync-Kopie) und schickt sie, sobald wieder Netz da ist. Solange kein Netz da ist, baut sie die Verbindung gar nicht erst auf, damit keine Fehler im Kreis erscheinen. In der Einstellung steht dann „Kein Internet. Änderungen bleiben auf diesem Gerät …“. Ohne Passphrase spricht die App Firestore gar nicht an.
+
+Was weiterhin Netz braucht: der allererste Besuch, damit der Cache gefüllt wird, und das tatsächliche Abgleichen mit der Cloud. Eine Mitteilung im Hintergrund, während die App zu ist, geht ohne Server nicht.

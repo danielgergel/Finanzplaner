@@ -223,11 +223,11 @@ function vSort(){
   if(!cur)return h+`<div class="card"><p class="big">Rest später.</p><p class="muted">${skipped} Händler hast du übersprungen.</p><button class="btn p w" data-a="sortReset">Übersprungene jetzt zeigen</button></div>`;
   const g=cur,cats=mode==="in"?[INCOME,TRANSFER,"Trading",...S.cats.filter(c=>![INCOME,TRANSFER,"Trading"].includes(c))]:[...S.cats.filter(c=>c!==INCOME&&c!==TRANSFER),TRANSFER];
   h+=`<div class="card"><p class="big">${esc(g.name)}</p><p class="muted small">${g.tx.length} ${g.tx.length===1?"Buchung":"Buchungen"} · ${fmt(Math.abs(g.sum))}${mode==="in"?" Eingang":""}</p>
-  ${g.tx.slice(0,3).map(t=>`<div class="tl static"><span class="td">${dShort(t.d)}</span><span class="tt">${esc((t.t||t.p).slice(0,60))}</span><span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span>${flipBtn(t)}</div>`).join("")}
+  ${g.tx.slice(0,3).map(t=>`<button class="tl" data-a="tx" data-h="${esc(t.h)}"><span class="td">${dShort(t.d)}</span><span class="tt">${esc((t.t||t.p).slice(0,60))}</span><span class="num ${t.amt>0?"pos":""}">${fmt(t.amt)}</span></button>`).join("")}
   ${g.tx.length>3?`<p class="muted small">… und ${g.tx.length-3} weitere</p>`:""}
   <div class="cgrid">${cats.map(c=>`<button data-a="sortCat" data-k="${esc(g.k)}" data-c="${esc(c)}">${dot(c)}${esc(catLabel(c))}</button>`).join("")}</div>
   <label class="fld">Regel für künftige Buchungen (Stichwort)<input id="alwk" value="${esc(g.k)}" aria-label="Stichwort der Regel"></label>
-  <p class="muted small">Ein Tipp auf die Kategorie ordnet alle ${g.tx.length} Buchungen zu und merkt sich das Stichwort für die Zukunft.</p>
+  <p class="muted small">Ein Tipp auf die Kategorie ordnet alle ${g.tx.length} Buchungen zu und merkt sich das Stichwort für die Zukunft. Eine einzelne Buchung öffnest du über ihre Zeile.</p>
   <button class="btn w" data-a="sortSkip" data-k="${esc(g.k)}">Später</button></div>`;
   return h;
 }
@@ -312,10 +312,16 @@ function renderSheet(){
    ${flipBlock(t)}
    ${cur===TRANSFER?`<p class="status">${isCardPay(t)?"Kreditkarte bezahlt: zählt nicht als Ausgabe, die Einkäufe stehen auf der Kreditkarte. So wird nichts doppelt gezählt.":"Umbuchung zwischen eigenen Konten: zählt weder als Ausgabe noch als Einnahme."}</p><button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Als normale Buchung behandeln</button>`:(t.nt?`<button class="btn s w" data-a="txNt" data-h="${esc(t.h)}">Wieder automatisch als Umbuchung erkennen</button>`:"")}
    ${t.man?`<div class="row"><button class="btn s p" data-a="${t.rec?"recEdit":"manEdit"}" data-h="${esc(t.h)}" data-id="${esc(t.rec||"")}">${t.rec?"Dauerposten bearbeiten":"✎ Bearbeiten"}</button></div>`:""}
-   <p class="muted small">Falsch einsortiert? Wähle unten die richtige Kategorie.</p>
+   <p class="muted small">Falsch einsortiert? Wähle die richtige Kategorie. Sie gilt für ${txs.length>1?"diese Buchungen":"diese Buchung"}.</p>
    <div class="cgrid">${S.cats.map(c=>`<button class="${c===cur?"on":""}" data-a="setcat" data-c="${esc(c)}">${dot(c)}${esc(catLabel(c))}</button>`).join("")}</div>
-   <label class="chk"><input type="checkbox" id="alw" ${sh.always===false?"":"checked"}> Für diesen Händler immer</label>
-   <input id="alwk" value="${esc(kw)}" aria-label="Schlüsselwort für die Regel">
+   <div id="offer">
+   <p class="muted small">${cur?"Gewählt: "+esc(catLabel(cur))+". Für später: Stichwort aus Empfänger, Verwendungszweck oder beidem. Was du leer lässt, gilt nicht.":"Nach der Kategorie kannst du sie für künftige Buchungen merken."}</p>
+   <label class="fld">Empfänger<input id="alwp" value="${esc(sh.p!=null?sh.p:kw)}" aria-label="Stichwort Empfänger"></label>
+   <label class="fld">Verwendungszweck<input id="alwt" value="${esc(sh.u!=null?sh.u:purposeKey(t))}" aria-label="Stichwort Verwendungszweck"></label>
+   <button class="btn p w" data-a="keepRule">Auch künftig so einsortieren</button>
+   <button class="btn w" data-a="applySimilar">Alle ähnlichen jetzt ändern</button>
+   ${sh.ruled?`<p class="status" role="status">Regel gespeichert. Sie steht unter Mehr, Regeln, und gilt beim nächsten Import.</p>`:""}
+   </div>
    <div class="row">${txs.length===1?`<button class="btn s dang" data-a="txDel" data-h="${esc(t.h)}">Buchung löschen</button>`:""}${txs.some(x=>x.c)?`<button class="btn s" data-a="setcat" data-c="">Automatisch</button>`:""}<button class="btn s" data-a="sheetClose">Schließen</button></div>`;
   }
   el.classList.add("on");
@@ -395,7 +401,7 @@ function vSettings(){
   h+=D("cat","Kategorien",S.cats.map((c,i)=>{const fixed=c===INCOME||c===TRANSFER;return `<div class="erow"><input data-ch="catName" data-i="${i}" value="${esc(fixed?catLabel(c):c)}" ${fixed?"disabled":""} aria-label="Kategorie"><button class="btn s" data-a="catDel" data-i="${i}" ${fixed?"disabled":""} aria-label="Kategorie ${esc(c)} löschen">Löschen</button></div>`;}).join("")+
     `<div class="erow"><input id="newCat" placeholder="Neue Kategorie" aria-label="Neue Kategorie"><button class="btn s p" data-a="catAdd">Hinzufügen</button></div>`);
   const q=norm(ui.ruleQ),rl=S.rules.map((r,i)=>({r,i})).filter(x=>!q||norm(x.r.k).includes(q)||norm(x.r.c).includes(q));
-  h+=D("rul","Regeln ("+S.rules.length+")",`<p class="muted small">Schlüsselwort (Groß/Klein egal) im Empfänger oder Zweck. ^ am Anfang = Wortanfang, $ am Ende = Wortende. Erste passende Regel zählt, neue stehen oben.</p>
+  h+=D("rul","Regeln ("+S.rules.length+")",`<p class="muted small">Stichwort im Empfänger oder im Verwendungszweck, Groß/Klein egal. Kurze Wörter wie „dm“ gelten nur als ganzes Wort. Eigene Regeln stehen oben und zählen zuerst. Mit × löschen, neue oben anlegen. „Auch künftig so einsortieren“ speichert hierher, auf diesem Gerät, und wird mit den anderen Daten synchronisiert.</p>
     <input id="ruleQ" placeholder="Regeln suchen" value="${esc(ui.ruleQ)}" aria-label="Regeln suchen">
     <div class="erow"><input id="newRk" placeholder="Schlüsselwort" aria-label="Schlüsselwort"><select id="newRc" aria-label="Kategorie">${catOpts("")}</select><button class="btn s p" data-a="ruleAdd">Neu</button></div>`+
     rl.slice(0,60).map(({r,i})=>`<div class="erow"><span class="rk">${esc(r.k)}${ruleBreadth(S,r.k).broad?` <small class="warnt" title="Diese Regel trifft sehr viele Buchungen">⚠ trifft sehr viele Buchungen</small>`:""}</span><span class="ra">→ ${esc(catLabel(r.c))}</span><button class="btn s" data-a="ruleDel" data-i="${i}" aria-label="Regel ${esc(r.k)} löschen">×</button></div>`).join("")+(rl.length>60?`<p class="muted small">… ${rl.length-60} weitere, Suche nutzen.</p>`:"")+
@@ -430,7 +436,7 @@ function vSettings(){
     (sy?`<button class="btn w" data-a="syNow">Jetzt synchronisieren</button><button class="btn w" data-a="syOff">Sync trennen</button>`:
     `<label class="fld">Sync-Passphrase<input type="password" id="syPass" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
      <button class="btn p w" data-a="syNew">Sync einrichten</button><button class="btn w" data-a="syJoin">Mit bestehender Passphrase verbinden</button>`));
-  h+=`<p class="muted small cen">Finanzplaner v13 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
+  h+=`<p class="muted small cen">Finanzplaner v15 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
   return h;
 }
 
@@ -598,15 +604,46 @@ const ACT={
   grp:el=>{const cm=cmap(),k=el.dataset.k;ui.sheet={hs:S.tx.filter(t=>cm.get(t.h)==null&&merchantKey(t)===k).map(t=>t.h)};render();},
   sheetClose:()=>{ui.sheet=null;render();},
   setcat:el=>{
-    const sh=ui.sheet,c=el.dataset.c,always=$("#alw")&&$("#alw").checked,kw=($("#alwk")||{}).value||"";
-    let mk=!!(c&&always&&kw.trim());
-    if(mk){const b=ruleBreadth(S,kw);if(b.broad&&!confirm("Diese Regel trifft sehr viele Buchungen ("+b.n+" Buchungen, "+b.d+" Händler"+(b.short?", Stichwort sehr kurz":"")+"). Trotzdem für alle anlegen?"))mk=false;}
+    const sh=ui.sheet;if(!sh||!sh.hs)return;
+    const c=el.dataset.c;
+    const pEl=$("#alwp"),uEl=$("#alwt");
+    if(pEl)sh.p=pEl.value;if(uEl)sh.u=uEl.value;
+    if(!c){
+      mutate(()=>{for(const h of sh.hs){const t=S.tx.find(x=>x.h===h);if(t){t.c=undefined;t.mn=undefined;t.rl=undefined;t.u=Date.now();}}ui.sheet=null;},false);
+      toast("Automatisch zugeordnet");return;
+    }
+    mutate(()=>{for(const h of sh.hs){const t=S.tx.find(x=>x.h===h);if(t){t.c=c;t.mn=1;t.rl=undefined;t.u=Date.now();}}});
+    const box=$("#offer");if(box)box.scrollIntoView({block:"nearest"});
+    toast("Kategorie: "+catLabel(c));
+  },
+  keepRule:()=>{
+    const sh=ui.sheet;if(!sh||!sh.hs)return;
+    const cur=S.tx.find(t=>t.h===sh.hs[0]);if(!cur||!cur.c){toast("Bitte zuerst eine Kategorie wählen");return;}
+    const p=($("#alwp")&&$("#alwp").value||"").trim(),u=($("#alwt")&&$("#alwt").value||"").trim();
+    const key=p&&u?p+"+"+u:(p||u);
+    if(!key){toast("Stichwort fehlt: Empfänger, Verwendungszweck oder beides");return;}
+    const b=ruleBreadth(S,key);
+    if(b.broad&&!confirm("Diese Regel trifft sehr viele Buchungen ("+b.n+" Buchungen, "+b.d+" Händler"+(b.short?", Stichwort sehr kurz":"")+"). Trotzdem anlegen?"))return;
+    sh.p=p;sh.u=u;sh.ruled=true;
+    const hit=t=>kwRe(key).test(norm((t.p||"")+" "+(t.t||"")));
     mutate(()=>{
-      for(const h of sh.hs){const t=S.tx.find(x=>x.h===h);if(t){t.c=c||undefined;t.u=Date.now();if(c){if(mk||sh.hs.length>1){t.rl=1;t.mn=undefined;}else{t.mn=1;t.rl=undefined;}}else{t.mn=undefined;t.rl=undefined;}}}
-      if(mk)addRule(kw,c);
-      ui.sheet=null;
-    },mk);
-    toast(c?"Kategorie: "+c+(always?" (Regel angelegt)":""):"Automatisch zugeordnet");
+      addRule(key,cur.c);
+      for(const h of sh.hs){const t=S.tx.find(x=>x.h===h);if(t&&hit(t)){t.rl=1;t.mn=undefined;t.u=Date.now();}}
+    },true);
+    toast("Regel gespeichert");
+  },
+  applySimilar:()=>{
+    const sh=ui.sheet;if(!sh||!sh.hs)return;
+    const cur=S.tx.find(t=>t.h===sh.hs[0]);if(!cur||!cur.c){toast("Bitte zuerst eine Kategorie wählen");return;}
+    const p=($("#alwp")&&$("#alwp").value||"").trim(),u=($("#alwt")&&$("#alwt").value||"").trim();
+    sh.p=p;sh.u=u;
+    const key=p&&u?p+"+"+u:(p||u),base=merchantKey(cur);
+    const hit=t=>key?kwRe(key).test(norm((t.p||"")+" "+(t.t||""))):merchantKey(t)===base;
+    const list=S.tx.filter(t=>!t.man&&!t.rec&&hit(t));
+    if(!list.length){toast("Keine passende Buchung");return;}
+    const ruled=!!sh.ruled;
+    mutate(()=>{for(const t of list){t.c=cur.c;t.u=Date.now();if(ruled){t.rl=1;t.mn=undefined;}else{t.mn=1;t.rl=undefined;}}});
+    toast(list.length+(list.length===1?" Buchung":" Buchungen")+" geändert");
   },
   txDel:el=>{if(!confirm("Diese Buchung löschen?"))return;mutate(()=>{S.tx=S.tx.filter(t=>t.h!==el.dataset.h);S.del.push(el.dataset.h);ui.sheet=null;},true);},
   mode:el=>mutate(()=>{S.budget.mode=el.dataset.m;},true),
@@ -988,8 +1025,14 @@ const VCH={
 
 /* ---------- Sync (Firestore, Ende-zu-Ende verschlüsselt) ---------- */
 const SY={st:"aus",msg:"",unsub:null,key:null,keySalt:null,salt:null,lastTs:0,busy:false,again:false,ref:null,id:null,ready:false,join:false,dirty:false};
+const OFFLINE_MSG="Kein Internet. Änderungen bleiben auf diesem Gerät und werden synchronisiert, sobald wieder Netz da ist.";
 function syLabel(){return META.pass?({ok:"Verbunden. ",verbinde:"",fehler:"",offline:"",aus:""}[SY.st]||"")+(SY.msg||"Verbinde …"):"Sync ist aus. Die App funktioniert vollständig lokal.";}
 function setSy(st,msg){SY.st=st;SY.msg=msg||"";const e=$("#sy-st");if(e)e.textContent=syLabel();}
+function netOff(){return typeof navigator!=="undefined"&&navigator.onLine===false;}
+function calmSync(e){
+  if(netOff()||(typeof syncFailureKind==="function"&&syncFailureKind(e)==="offline")){setSy("offline",OFFLINE_MSG);return true;}
+  return false;
+}
 const hhmm=()=>new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
 async function getKey(pass,saltB64){if(SY.key&&SY.keySalt===saltB64)return SY.key;SY.key=await deriveKey(pass,b64d(saltB64));SY.keySalt=saltB64;return SY.key;}
 function syncStop(){if(SY.unsub){try{SY.unsub();}catch(e){}}SY.unsub=null;SY.ready=false;SY.ref=null;SY.salt=null;SY.key=null;clearTimeout(pushT);}
@@ -998,14 +1041,18 @@ async function syncStart(){
   if(!META.pass){setSy("aus","");return;}
   if(!window.FB){setSy("offline","Firebase nicht erreichbar (offline?). Lokal läuft alles.");return;}
   try{
-    SY.id=await docIdFor(META.pass);SY.ref=FB.doc(FB.db,"finanzplaner",SY.id);setSy("verbinde","Verbinde …");
-    SY.unsub=FB.onSnapshot(SY.ref,onSnap,e=>setSy("fehler","Sync-Fehler: "+(e.code||e.message)));
-  }catch(e){setSy("fehler",e.message);}
+    SY.id=await docIdFor(META.pass);SY.ref=FB.doc(FB.db,"finanzplaner",SY.id);setSy(netOff()?"offline":"verbinde",netOff()?OFFLINE_MSG:"Verbinde …");
+    SY.unsub=FB.onSnapshot(SY.ref,onSnap,e=>{if(!calmSync(e))setSy("fehler","Sync-Fehler: "+(e.code||e.message));});
+  }catch(e){if(!calmSync(e))setSy("fehler",e.message);}
 }
 async function onSnap(snap){
   if(snap.metadata&&snap.metadata.hasPendingWrites)return;
   try{
     if(!snap.exists()){
+      if(netOff()){
+        if(SY.join){setSy("offline","Kein Internet. Ob es Daten zu dieser Passphrase gibt, prüft die App, sobald wieder Netz da ist.");return;}
+        SY.ready=true;setSy("offline",OFFLINE_MSG);pushNow();return;
+      }
       if(SY.join){setSy("fehler","Zu dieser Passphrase gibt es keine Daten. Tippfehler?");syncStop();META.pass=null;SY.join=false;saveMeta();render();return;}
       SY.ready=true;await pushNow();return;
     }
@@ -1019,9 +1066,9 @@ async function onSnap(snap){
     S=mergeStates(S,R);S.dev=dev;VER++;
     SY.ready=true;kvSet("state",S);
     if(before!==JSON.stringify([S.tx.length,S.cfgTs]))render();
-    setSy("ok","Synchronisiert "+hhmm());
+    setSy(netOff()?"offline":"ok",netOff()?OFFLINE_MSG:"Synchronisiert "+hhmm());
     if(extra||SY.dirty)schedulePush(true);
-  }catch(e){setSy("fehler",e.message);}
+  }catch(e){if(!calmSync(e))setSy("fehler",e.message);}
 }
 function schedulePush(now){
   if(!META.pass||!window.FB)return;
@@ -1033,11 +1080,12 @@ async function pushNow(){
   if(SY.busy){SY.again=true;return;}
   SY.busy=true;SY.dirty=false;
   try{
+    if(netOff())setSy("offline",OFFLINE_MSG);
     const salt=SY.salt||b64e(rnd(16)),key=await getKey(META.pass,salt);
     const enc=await encryptJSON(JSON.parse(JSON.stringify(S)),key),ts=Date.now();
     for(const d of packDocs(SY.id,salt,enc,ts,S.dev))await FB.setDoc(FB.doc(FB.db,"finanzplaner",d.id),d.data);
-    SY.salt=salt;SY.lastTs=ts;setSy("ok","Gesendet "+hhmm());
-  }catch(e){setSy("fehler",e.message||String(e));}
+    SY.salt=salt;SY.lastTs=ts;setSy(netOff()?"offline":"ok",netOff()?OFFLINE_MSG:"Gesendet "+hhmm());
+  }catch(e){if(calmSync(e))SY.dirty=true;else setSy("fehler",e.message||String(e));}
   finally{SY.busy=false;if(SY.again){SY.again=false;schedulePush();}}
 }
 async function syConnect(join){
@@ -1093,6 +1141,12 @@ document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click",(
   t.addEventListener("contextmenu",e=>e.preventDefault());
 })();
 window.addEventListener("fb",()=>{if(META.pass&&!SY.unsub)syncStart();});
+window.addEventListener("offline",()=>{if(META.pass)setSy("offline",OFFLINE_MSG);});
+window.addEventListener("fbonline",()=>{
+  if(!META.pass||!window.FB)return;
+  if(SY.unsub&&SY.ready)schedulePush(true);
+  else if(!SY.unsub)syncStart();
+});
 
 /* ---------- Sparziele, Abo-Radar, Jahresrückblick, CSV, Budget-Hinweis ---------- */
 const AMP_RANK={g:0,y:1,r:2,n:0};

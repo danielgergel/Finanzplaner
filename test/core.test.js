@@ -95,6 +95,37 @@ check(catOf("Beispiel GmbH", "Lohn/Gehalt", 400)!==C.INCOME, "kleiner Gehalts-Te
 check(catOf("Beispiel GmbH", "Lohn/Gehalt", -3100)!==C.INCOME, "negativer Gehalts-Text ist kein Einkommen");
 eq(catOf("NETFLIX.COM", "Abo", -12.99), "Abos", "Netflix ist Abo");
 
+/* ---------- Fixkosten im Verwendungszweck schlägt dm ---------- */
+eq(catOf("dm", "Fixkosten", -200), null, "200 Euro Fixkosten an dm ist nicht Drogerie");
+eq(catOf("DM", "Fixkosten", -200), null, "DM und Zweck Fixkosten bleibt unsortiert");
+eq(catOf("dm-drogerie markt GmbH", "Fixkosten", -200), null, "dm-drogerie mit Zweck Fixkosten ist nicht Drogerie");
+eq(catOf("ROSSMANN", "Fixkosten", -200), null, "Rossmann mit Zweck Fixkosten ist nicht Drogerie");
+eq(catOf("dm", "Fixkosten Versicherung", -200), "Versicherungen", "Fixkosten Versicherung schlägt dm");
+eq(catOf("dm-drogerie markt GmbH", "Fixkosten Miete", -200), "Miete", "Fixkosten Miete bleibt Miete");
+eq(catOf("dm", "Fixkosten und Nebenkosten", -200), "Strom & Nebenkosten", "Nebenkosten im Zweck schlägt dm");
+eq(catOf("DM", "Einkauf", -18.4), "Drogerie", "dm als eigenes Wort bleibt Drogerie");
+eq(catOf("dm-drogerie markt GmbH", "Filiale 12", -9.5), "Drogerie", "dm-drogerie mit Filiale bleibt Drogerie");
+eq(catOf("EDEKA", "Fixkosten", -200), null, "Fixkosten unterdrückt auch den Supermarkt");
+eq(catOf("Stadtwerke Beispiel", "Fixkosten", -80), "Strom & Nebenkosten", "Stadtwerke bleiben Strom, auch bei Fixkosten");
+eq(catOf("Allianz", "Fixkosten", -40), "Versicherungen", "Versicherer bleibt Versicherung, auch bei Fixkosten");
+for(const name of ["Nordmann","Grundmann","Feldmann","Widmann","Goldmann","Admin GmbH","Endmontage"]){
+  check(catOf(name, "Fixkosten", -200)!=="Drogerie", name+" mit Fixkosten ist nicht Drogerie");
+}
+check(catOf("GENODEM1GLS", "Fixkosten", -200)!=="Drogerie", "IBAN-Fragment DEM ist nicht dm");
+eq(catOf("REWE", "Drogerie", -6), "Drogerie", "Wort Drogerie im Zweck gewinnt gegen REWE");
+check(!C.kwMatch(C.kwParse("*DM*"), C.tok("NORDMANN GRUNDMANN WIDMANN ENDMONTAGE")), "dm trifft nicht innerhalb eines Wortes");
+check(!C.kwMatch(C.kwParse("DM*"), C.tok("GENODEM1GLS")), "kurzes dm* trifft keine IBAN");
+check(C.kwMatch(C.kwParse("DM"), C.tok("dm-drogerie markt")), "dm als eigenes Token trifft");
+check(C.kwMatch(C.kwParse("*VERSICHERUNG*"), C.tok("KFZVERSICHERUNG")), "langes Versicherungswort trifft im Kompositum");
+{
+  const S = C.newState();
+  S.rules.unshift({k:"FIXKOSTEN",c:"Miete"});
+  S.tx = [tx({h:"x",p:"dm",t:"Fixkosten",amt:-200})];
+  eq(C.resolveAll(S).get("x"), "Miete", "eigene Regel Fixkosten gilt vor der Laden-Regel");
+  S.rules[0]={k:"DM",c:"Lebensmittel"};
+  eq(C.resolveAll(S).get("x"), "Lebensmittel", "eigene Regel bleibt vor dem Zweckwort");
+}
+
 /* ---------- PDF-Text ---------- */
 {
   const lines = read("pdf-auszug.txt").split(/\r?\n/);
@@ -285,6 +316,13 @@ eq(catOf("NETFLIX.COM", "Abo", -12.99), "Abos", "Netflix ist Abo");
   const red = paint(-120);
   eq(red[0].am, "r", "über dem Richtwert ist rot");
   eq(red[0].name, "Lebensmittel", "Hinweis nennt die Kategorie");
+}
+
+/* ---------- Sync: nur echtes Versagen ist ein Fehler, „offline“ nicht ---------- */
+{
+  eq(C.syncFailureKind({code:"unavailable",message:"Failed to get document because the client is offline."}), "offline", "Firestore offline ist kein Fehler");
+  eq(C.syncFailureKind({message:"Could not reach Cloud Firestore backend. Connection failed"}), "offline", "Backend nicht erreichbar");
+  eq(C.syncFailureKind({code:"permission-denied",message:"Missing or insufficient permissions."}), "error", "echte Sync-Fehler bleiben Fehler");
 }
 
 if(failed){
