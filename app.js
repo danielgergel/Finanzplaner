@@ -1105,7 +1105,7 @@ document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click",(
 })();
 window.addEventListener("fb",()=>{if(META.pass&&!SY.unsub)syncStart();});
 window.addEventListener("offline",()=>{if(META.pass)setSy("offline",OFFLINE_MSG);});
-window.addEventListener("online",()=>{
+window.addEventListener("fbonline",()=>{
   if(!META.pass||!window.FB)return;
   if(SY.unsub&&SY.ready)schedulePush(true);
   else if(!SY.unsub)syncStart();

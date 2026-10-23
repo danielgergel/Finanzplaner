@@ -194,6 +194,6 @@ Die früher erwähnte Datei `test_v12.js` liegt nicht im Repository. Die aktuell
 
 Einmal mit Internet öffnen (Safari: Teilen, Zum Home-Bildschirm). Danach gehen Buchungen, Kategorien, Ampel, Sparziele, Abo-Radar, Jahresrückblick, CSV-Export, PDF-Import und die Schriften ohne Netz. Der PDF-Worker liegt lokal im Cache.
 
-Firestore-Sync, wenn eine Passphrase eingerichtet ist: die App speichert Änderungen lokal (IndexedDB, auch die verschlüsselte Sync-Kopie) und schickt sie, sobald wieder Netz da ist. In der Einstellung steht dann „Kein Internet. Änderungen bleiben auf diesem Gerät …“, kein englischer Firebase-Fehler. Ohne Passphrase spricht die App Firestore gar nicht an.
+Firestore-Sync, wenn eine Passphrase eingerichtet ist: die App speichert Änderungen lokal (IndexedDB, auch die verschlüsselte Sync-Kopie) und schickt sie, sobald wieder Netz da ist. Solange kein Netz da ist, baut sie die Verbindung gar nicht erst auf, damit keine Fehler im Kreis erscheinen. In der Einstellung steht dann „Kein Internet. Änderungen bleiben auf diesem Gerät …“. Ohne Passphrase spricht die App Firestore gar nicht an.
 
 Was weiterhin Netz braucht: der allererste Besuch, damit der Cache gefüllt wird, und das tatsächliche Abgleichen mit der Cloud. Eine Mitteilung im Hintergrund, während die App zu ist, geht ohne Server nicht.

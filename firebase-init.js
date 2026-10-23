@@ -1,6 +1,6 @@
 /* Firebase 10.12.2, lokal aus vendor/ (kein CDN). Dieselbe modulare Schnittstelle wie bisher, plus lokaler Firestore-Speicher. */
 import {initializeApp} from "./vendor/firebase-app.js";
-import {initializeFirestore,doc,onSnapshot,setDoc,getDoc,persistentLocalCache,persistentMultipleTabManager,memoryLocalCache} from "./vendor/firebase-firestore.js";
+import {initializeFirestore,doc,onSnapshot,setDoc,getDoc,persistentLocalCache,persistentMultipleTabManager,memoryLocalCache,disableNetwork,enableNetwork} from "./vendor/firebase-firestore.js";
 /* Diese eine Konsolenmeldung ist kein Absturz: ohne Netz liest und schreibt Firestore in den lokalen Speicher und schickt die Änderungen später. */
 const origError=console.error.bind(console);
 console.error=(...args)=>{
@@ -17,5 +17,12 @@ try{
   try{db=initializeFirestore(app,Object.assign({localCache:memoryLocalCache()},net));}
   catch(e2){db=initializeFirestore(app,net);}
 }
+async function useNetwork(on){
+  try{if(on)await enableNetwork(db);else await disableNetwork(db);}catch(e){}
+}
+/* Ohne Netz erst gar keine Verbindung aufbauen. Sonst probiert Firestore es im Kreis und schreibt Fehlermeldungen. */
+if(typeof navigator!=="undefined"&&navigator.onLine===false)await useNetwork(false);
 window.FB={db,doc,onSnapshot,setDoc,getDoc};
 window.dispatchEvent(new Event("fb"));
+window.addEventListener("offline",()=>{useNetwork(false);});
+window.addEventListener("online",()=>{useNetwork(true).then(()=>window.dispatchEvent(new Event("fbonline")));});
