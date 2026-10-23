@@ -1561,6 +1561,14 @@ function rowsToCSV(rows){
 }
 
 /* ---------- Ampel je Kategorie (gleiche Regeln wie die Monatsansicht, inkl. Prognose-Gelb) ---------- */
+/* Sync-Fehler, die nur "kein Netz" bedeuten. Die Daten bleiben lokal und gehen später raus. */
+function syncFailureKind(e){
+  const code=String(e&&e.code||"").toLowerCase();
+  const msg=String(e&&(e.message||e)||"").toLowerCase();
+  const t=code+" "+msg;
+  if(code==="unavailable"||/offline|unavailable|network-request-failed|failed to get document|could not reach|backend didn't respond|client is offline/.test(t))return "offline";
+  return "error";
+}
 function budgetLights(S, ym, cmap, today){
   today=today||todayStr();
   cmap=cmap||resolveAll(S);
@@ -1585,4 +1593,4 @@ function budgetLights(S, ym, cmap, today){
   return out.sort((a,b)=>(a.am==="r"?0:1)-(b.am==="r"?0:1)||b.ist-a.ist);
 }
 
-if(typeof module!=="undefined"&&module.exports)module.exports={dupCleanAll,importOverlap,accountOverlap,alnumOf,applyImport,dupScan,dupClean,dupSim,dupTokens,pdfLike,crossDups,listStats,salaryStats,salaryMonths,incKind,INC_KIND_LABEL,medianOf2,flipTx,flipGroup,flipRangeList,signCheck,ruleBreadth,reapplyRules,recurringBig,medianOf,kwMatch,kwParse,tok,fixPosts,applyRentMonths,MONTHS_DE,DEFKEYS,LEGACY_RULES,detectOwnCandidate,detectOwnNames,detectSalary,incomeSplit,MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK,monthsLeft,goalSaved,goalView,goalPhrase,subscriptionRadar,annualReview,exportRows,rowsToCSV,budgetLights};
+if(typeof module!=="undefined"&&module.exports)module.exports={dupCleanAll,importOverlap,accountOverlap,alnumOf,applyImport,dupScan,dupClean,dupSim,dupTokens,pdfLike,crossDups,listStats,salaryStats,salaryMonths,incKind,INC_KIND_LABEL,medianOf2,flipTx,flipGroup,flipRangeList,signCheck,ruleBreadth,reapplyRules,recurringBig,medianOf,kwMatch,kwParse,tok,fixPosts,applyRentMonths,MONTHS_DE,DEFKEYS,LEGACY_RULES,detectOwnCandidate,detectOwnNames,detectSalary,incomeSplit,MAN_ACC,materializeRecur,removeRecurTx,wipeImported,commonPeriod,PALETTE,catColor,donutData,coverage,coverageGaps,incomeAvgComplete,avgReport,mkey,takeRows,boundaryIncome,importDiag,SALARY_TXT,itemsToRows,DEF_BUDGET,neutralBudget,fixedSum,isFixItem,suggestFor,detectRecurring,SCHEMA,catLabel,groupOf,ensureItems,migrateState,incomeOf,projDay,lastDate,markDups,isCardPay,itemsToLines,parsePdfLines,detectPdfCtx,tailAmount,norm,DEF_CATS,DEF_RULES,expandRules,decodeBuf,parseCSV,detectDelim,parseNum,parseDate,analyzeCSV,extractRows,assignHashes,kwRe,merchantKey,resolveAll,monthAgg,latestBal,effIncome,refOf,itemIst,ampel,projection,deriveKey,encryptJSON,decryptJSON,packDocs,unpackDocs,docIdFor,sha256hex,pinCreate,pinVerify,newState,normalizeState,mergeStates,hasExtra,makeDemo,TRANSFER,INCOME,shiftYM,b64e,b64d,CHUNK,monthsLeft,goalSaved,goalView,goalPhrase,subscriptionRadar,annualReview,exportRows,rowsToCSV,budgetLights,syncFailureKind};

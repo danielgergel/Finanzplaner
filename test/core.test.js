@@ -287,6 +287,13 @@ eq(catOf("NETFLIX.COM", "Abo", -12.99), "Abos", "Netflix ist Abo");
   eq(red[0].name, "Lebensmittel", "Hinweis nennt die Kategorie");
 }
 
+/* ---------- Sync: nur echtes Versagen ist ein Fehler, „offline“ nicht ---------- */
+{
+  eq(C.syncFailureKind({code:"unavailable",message:"Failed to get document because the client is offline."}), "offline", "Firestore offline ist kein Fehler");
+  eq(C.syncFailureKind({message:"Could not reach Cloud Firestore backend. Connection failed"}), "offline", "Backend nicht erreichbar");
+  eq(C.syncFailureKind({code:"permission-denied",message:"Missing or insufficient permissions."}), "error", "echte Sync-Fehler bleiben Fehler");
+}
+
 if(failed){
   console.error(failed+" von "+n+" Prüfungen fehlgeschlagen");
   process.exit(1);

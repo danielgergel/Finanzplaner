@@ -430,7 +430,7 @@ function vSettings(){
     (sy?`<button class="btn w" data-a="syNow">Jetzt synchronisieren</button><button class="btn w" data-a="syOff">Sync trennen</button>`:
     `<label class="fld">Sync-Passphrase<input type="password" id="syPass" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
      <button class="btn p w" data-a="syNew">Sync einrichten</button><button class="btn w" data-a="syJoin">Mit bestehender Passphrase verbinden</button>`));
-  h+=`<p class="muted small cen">Finanzplaner v13 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
+  h+=`<p class="muted small cen">Finanzplaner v14 · alle Daten bleiben auf deinem Gerät <button class="vq" data-a="vault" aria-label="Gesperrter Bereich">·</button></p>`;
   return h;
 }
 
@@ -988,8 +988,14 @@ const VCH={
 
 /* ---------- Sync (Firestore, Ende-zu-Ende verschlüsselt) ---------- */
 const SY={st:"aus",msg:"",unsub:null,key:null,keySalt:null,salt:null,lastTs:0,busy:false,again:false,ref:null,id:null,ready:false,join:false,dirty:false};
+const OFFLINE_MSG="Kein Internet. Änderungen bleiben auf diesem Gerät und werden synchronisiert, sobald wieder Netz da ist.";
 function syLabel(){return META.pass?({ok:"Verbunden. ",verbinde:"",fehler:"",offline:"",aus:""}[SY.st]||"")+(SY.msg||"Verbinde …"):"Sync ist aus. Die App funktioniert vollständig lokal.";}
 function setSy(st,msg){SY.st=st;SY.msg=msg||"";const e=$("#sy-st");if(e)e.textContent=syLabel();}
+function netOff(){return typeof navigator!=="undefined"&&navigator.onLine===false;}
+function calmSync(e){
+  if(netOff()||(typeof syncFailureKind==="function"&&syncFailureKind(e)==="offline")){setSy("offline",OFFLINE_MSG);return true;}
+  return false;
+}
 const hhmm=()=>new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
 async function getKey(pass,saltB64){if(SY.key&&SY.keySalt===saltB64)return SY.key;SY.key=await deriveKey(pass,b64d(saltB64));SY.keySalt=saltB64;return SY.key;}
 function syncStop(){if(SY.unsub){try{SY.unsub();}catch(e){}}SY.unsub=null;SY.ready=false;SY.ref=null;SY.salt=null;SY.key=null;clearTimeout(pushT);}
@@ -998,14 +1004,18 @@ async function syncStart(){
   if(!META.pass){setSy("aus","");return;}
   if(!window.FB){setSy("offline","Firebase nicht erreichbar (offline?). Lokal läuft alles.");return;}
   try{
-    SY.id=await docIdFor(META.pass);SY.ref=FB.doc(FB.db,"finanzplaner",SY.id);setSy("verbinde","Verbinde …");
-    SY.unsub=FB.onSnapshot(SY.ref,onSnap,e=>setSy("fehler","Sync-Fehler: "+(e.code||e.message)));
-  }catch(e){setSy("fehler",e.message);}
+    SY.id=await docIdFor(META.pass);SY.ref=FB.doc(FB.db,"finanzplaner",SY.id);setSy(netOff()?"offline":"verbinde",netOff()?OFFLINE_MSG:"Verbinde …");
+    SY.unsub=FB.onSnapshot(SY.ref,onSnap,e=>{if(!calmSync(e))setSy("fehler","Sync-Fehler: "+(e.code||e.message));});
+  }catch(e){if(!calmSync(e))setSy("fehler",e.message);}
 }
 async function onSnap(snap){
   if(snap.metadata&&snap.metadata.hasPendingWrites)return;
   try{
     if(!snap.exists()){
+      if(netOff()){
+        if(SY.join){setSy("offline","Kein Internet. Ob es Daten zu dieser Passphrase gibt, prüft die App, sobald wieder Netz da ist.");return;}
+        SY.ready=true;setSy("offline",OFFLINE_MSG);pushNow();return;
+      }
       if(SY.join){setSy("fehler","Zu dieser Passphrase gibt es keine Daten. Tippfehler?");syncStop();META.pass=null;SY.join=false;saveMeta();render();return;}
       SY.ready=true;await pushNow();return;
     }
@@ -1019,9 +1029,9 @@ async function onSnap(snap){
     S=mergeStates(S,R);S.dev=dev;VER++;
     SY.ready=true;kvSet("state",S);
     if(before!==JSON.stringify([S.tx.length,S.cfgTs]))render();
-    setSy("ok","Synchronisiert "+hhmm());
+    setSy(netOff()?"offline":"ok",netOff()?OFFLINE_MSG:"Synchronisiert "+hhmm());
     if(extra||SY.dirty)schedulePush(true);
-  }catch(e){setSy("fehler",e.message);}
+  }catch(e){if(!calmSync(e))setSy("fehler",e.message);}
 }
 function schedulePush(now){
   if(!META.pass||!window.FB)return;
@@ -1033,11 +1043,12 @@ async function pushNow(){
   if(SY.busy){SY.again=true;return;}
   SY.busy=true;SY.dirty=false;
   try{
+    if(netOff())setSy("offline",OFFLINE_MSG);
     const salt=SY.salt||b64e(rnd(16)),key=await getKey(META.pass,salt);
     const enc=await encryptJSON(JSON.parse(JSON.stringify(S)),key),ts=Date.now();
     for(const d of packDocs(SY.id,salt,enc,ts,S.dev))await FB.setDoc(FB.doc(FB.db,"finanzplaner",d.id),d.data);
-    SY.salt=salt;SY.lastTs=ts;setSy("ok","Gesendet "+hhmm());
-  }catch(e){setSy("fehler",e.message||String(e));}
+    SY.salt=salt;SY.lastTs=ts;setSy(netOff()?"offline":"ok",netOff()?OFFLINE_MSG:"Gesendet "+hhmm());
+  }catch(e){if(calmSync(e))SY.dirty=true;else setSy("fehler",e.message||String(e));}
   finally{SY.busy=false;if(SY.again){SY.again=false;schedulePush();}}
 }
 async function syConnect(join){
@@ -1093,6 +1104,12 @@ document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click",(
   t.addEventListener("contextmenu",e=>e.preventDefault());
 })();
 window.addEventListener("fb",()=>{if(META.pass&&!SY.unsub)syncStart();});
+window.addEventListener("offline",()=>{if(META.pass)setSy("offline",OFFLINE_MSG);});
+window.addEventListener("online",()=>{
+  if(!META.pass||!window.FB)return;
+  if(SY.unsub&&SY.ready)schedulePush(true);
+  else if(!SY.unsub)syncStart();
+});
 
 /* ---------- Sparziele, Abo-Radar, Jahresrückblick, CSV, Budget-Hinweis ---------- */
 const AMP_RANK={g:0,y:1,r:2,n:0};
