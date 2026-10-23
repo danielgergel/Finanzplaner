@@ -1,0 +1,10 @@
+Hinweis;synthetische Testdaten;nicht echt
+Girokonto;DE00000000000000000000;Beispielbank
+Buchungsdatum;Wertstellung;Status;Zahlungspflichtige*r;Zahlungsempfänger*in;Verwendungszweck;Umsatztyp;Betrag (€);Gläubiger-ID;Kundenreferenz
+01.03.2026;01.03.2026;Gebucht;Beispiel GmbH;Max Mustermann;Lohn/Gehalt Maerz;Eingang;3.100,00;;REF-GEHALT-001
+02.03.2026;02.03.2026;Gebucht;Max Mustermann;Vermieter Musterstrasse;Miete Wohnung Maerz;Ausgang;-800,00;DE98ZZZ00000000001;REF-MIETE-001
+03.03.2026;03.03.2026;Gebucht;Max Mustermann;REWE Markt GmbH;Kartenzahlung;Ausgang;-42,18;;REF-REWE-001
+04.03.2026;04.03.2026;Gebucht;Max Mustermann;SHELL Station;Tanken A7;Ausgang;-61,40;;REF-SHELL-001
+05.03.2026;05.03.2026;Vorgemerkt;Max Mustermann;NETFLIX.COM;Abo;Ausgang;-12,99;;REF-NFLX-P
+06.03.2026;06.03.2026;Gebucht;Max Mustermann;WOLTER GmbH;Ueberweisung Rechnung;Ausgang;-20,00;;REF-WOLTER-001
+07.03.2026;07.03.2026;Gebucht;Max Mustermann;Beach Shell Bar;Cocktail;Ausgang;-18,00;;REF-BAR-001

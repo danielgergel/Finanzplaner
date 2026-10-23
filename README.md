@@ -1,9 +1,18 @@
 # Finanzplaner (iPhone-PWA)
 
-Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics, keine Drittanbieter-Skripte außer Firebase (gstatic) und Google Fonts.
+Eigenständige Finanz-App: CSV-Kontoauszüge importieren, automatisch kategorisieren, Budget mit Ampel und Alarm, versteckter Tresor. Alles läuft offline; Sync ist optional und Ende-zu-Ende verschlüsselt. Keine Analytics. Firebase 10.12.2 und pdf.js 3.11.174 liegen im Ordner `vendor/` (keine Skripte von einem CDN). Schriften kommen von Google Fonts.
 
 ## Deployment
-Die Dateien `index.html`, `sw.js` und `apple-touch-icon.png` auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm". `test_data/` wird nicht gebraucht und kann weg. Der Service Worker (`finanzplaner-v12`) lädt Netz zuerst (3 s), dann Cache.
+Diese Dateien auf einen beliebigen HTTPS-Webspace legen (z. B. Firebase Hosting, GitHub Pages) und die URL in Safari öffnen, dann Teilen, "Zum Home-Bildschirm": `index.html`, `style.css`, `theme.js`, `core.js`, `app.js`, `firebase-init.js`, `sw.js`, `apple-touch-icon.png` und der Ordner `vendor/`. `test/` wird zum Betrieb nicht gebraucht. Der Service Worker (`finanzplaner-v13`) lädt Netz zuerst (3 s), dann Cache, und speichert die genannten Dateien.
+
+## Tests
+Die Kernlogik (Parser, Kategorien, Ampel, Sparziele, Abo-Radar, Jahresrückblick, CSV) liegt in `core.js` und lässt sich ohne Browser prüfen:
+
+```
+node test/core.test.js
+```
+
+Dasselbe macht `npm test` (keine Abhängigkeiten, Node 18 oder neuer). Die Beispieldateien unter `test/fixtures/` sind erfunden (Musterstraße, Beispiel-IBAN, runde Beträge). Geprüft werden unter anderem CSV (Giro, Amex mit umgekehrtem Vorzeichen, Soll/Haben, Windows-1252), PDF-Textzeilen, Gehalt, Duplikate, Vorzeichen-Umdrehen, Kategorien, Sparziel-Text, Abo-Preiserhöhung, Jahresvergleich, CSV-Export und die Ampel (gelb/rot).
 
 ## CSV-Import
 Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfen (neu/Duplikate), übernehmen.
@@ -11,7 +20,7 @@ Reiter Import: Konto wählen, Datei wählen oder Text einfügen, Vorschau prüfe
 - Kopfzeilen werden per Synonymen erkannt (Meta-Zeilen vor der Tabelle werden übersprungen). Sonst erscheint eine Zuordnungs-Maske; die Zuordnung wird pro Konto gemerkt.
 - Duplikate: Hash aus Datum, Betrag, Text und Konto; ein erneuter Import fügt nichts doppelt ein.
 - Amex liefert Ausgaben meist positiv: Haken "Vorzeichen umkehren" (beim Konto Amex voreingestellt).
-- Beispiel-CSVs zum Testen: `test_data/` (DKB, Revolut, Amex; komplett synthetisch).
+- Erfundene Beispiel-CSVs für die automatischen Tests: `test/fixtures/` (Giro, Amex, Soll/Haben; komplett synthetisch, keine echten Konten).
 
 ## Tresor
 Langdruck (1,5 s) auf den Titel "Finanzplaner" oder der unscheinbare Punkt ganz unten in "Mehr". PIN 4-6 Ziffern (nur als salted PBKDF2-Hash gespeichert), sperrt nach 60 s Inaktivität oder beim Verlassen der App. Vermögenswerte erscheinen nirgends sonst.
@@ -20,17 +29,22 @@ Langdruck (1,5 s) auf den Titel "Finanzplaner" oder der unscheinbare Punkt ganz 
 Passphrase wählen (mindestens 12 Zeichen, lang und einmalig). Alle Daten werden im Browser mit AES-GCM verschlüsselt (Schlüssel per PBKDF2, 200.000 Iterationen, zufälliges Salt im Dokument) und als Base64 in die Collection `finanzplaner` geschrieben. Dokument-ID = gekürzter SHA-256 der Passphrase. Firestore sieht nur Chiffretext. Große Datenmengen werden in Teile (`<id>_1`, `<id>_2` ...) zu je ca. 700 KB aufgeteilt (max. 20). Konflikte: Buchungen werden nach Hash vereinigt, Konfiguration nach Zeitstempel (neuester gewinnt). Auf dem Gerät wird die Passphrase lokal gespeichert, damit der Sync automatisch läuft.
 
 Empfohlene Firestore-Regeln (nur diese Collection, Größe begrenzt). Da die Daten ohnehin verschlüsselt sind, ist das ein zusätzlicher Schutz:
+`allow read` erlaubt in Firestore sowohl `get` (ein bekanntes Dokument) als auch `list` (die ganze Collection auflisten). Die App liest immer nur das eine Dokument zur Passphrase und braucht kein `list`. In den Beispielen unten ist das die einzige Lese-Regel; für andere Collections steht nur der Hinweis, bestehende Regeln unverändert zu lassen (dort nichts pauschal auf `read: if true` stellen).
+
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /finanzplaner/{docId} {
-      allow read: if true;
+      // get: nur wer die Dokument-ID (Hash der Passphrase) kennt. list: niemand darf die Collection auflisten.
+      allow get: if true;
+      allow list: if false;
       allow write: if request.resource.data.keys().hasOnly(['v','salt','iv','z','ts','dev','n','c'])
                    && request.resource.data.c is string
                    && request.resource.data.c.size() < 800000;
     }
-    // bestehende Regeln für andere Collections (z. B. Kochplaner) hier beibehalten
+    // bestehende Regeln für andere Collections (z. B. Kochplaner) hier beibehalten.
+    // Dort kein "allow read: if true" und kein "allow list: if true", sonst ist die Collection aufzählbar.
   }
 }
 ```
@@ -41,7 +55,7 @@ Mehr, Daten: JSON-Backup herunterladen (optional ohne Tresor) und wieder einlese
 
 ## PDF-Import
 Im Import-Reiter kann statt einer CSV auch ein PDF-Kontoauszug gewählt, per Drag & Drop oder Einfügen übergeben werden. Beim Einfügen von Text erkennt die App automatisch, ob es CSV oder aus einer PDF kopierter Text ist.
-- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 von cdnjs.cloudflare.com, wird erst beim ersten PDF-Import nachgeladen und danach vom Service Worker `finanzplaner-v12` gecacht). Beim allerersten PDF-Import ist deshalb Internet nötig; die PDF selbst wird nirgends hochgeladen.
+- Die PDF wird nur lokal im Browser gelesen (pdf.js 3.11.174 aus `vendor/`, vom Service Worker `finanzplaner-v13` mitgecacht). Die PDF selbst wird nirgends hochgeladen. Der Worker läuft ohne `eval`, damit die Content-Security-Policy streng bleiben kann.
 - Erkannt werden Zeilen mit Datum (TT.MM.JJJJ, TT.MM.JJ, TT.MM., ISO, englisch) und Betrag (deutsch oder englisch, mit S/H, CR/DR, +/- oder nachgestelltem Minus); Folgezeilen gehören zum Verwendungszweck. Das Jahr bei Daten ohne Jahr kommt aus dem Auszugskopf oder dem Dateinamen, sonst wird gefragt. Saldo-, Summen-, IBAN- und Seitenzeilen werden ausgefiltert.
 - Beträge ohne Vorzeichen werden als Ausgabe gewertet (Ausnahme: Wörter wie Gehalt/Gutschrift). Diese Buchungen sind in der Vorschau als "geschätzt" gekennzeichnet; der Haken "Vorzeichen umkehren" dreht alle um.
 - Nicht zugeordnete Zeilen stehen in der Vorschau unter "Nicht erkannt". Gescannte PDFs (ohne Text) und passwortgeschützte PDFs liefern eine Meldung.
@@ -129,7 +143,7 @@ So drehst du Plus/Minus um:
 4. Beim Import warnt die App, wenn bei einem Konto fast alles positiv ist ("Ist das richtig?" mit "Ja, stimmt" oder "Umkehren"), wenn die Saldo-Spalte nur mit umgekehrten Vorzeichen passt oder wenn Buchungstext/Typ (z. B. Lastschrift) und Vorzeichen nicht zusammenpassen.
 5. Eine einzeln gesetzte Kategorie bleibt beim Umdrehen; automatische Zuordnungen (Gehalt, Miete, Regeln) werden neu berechnet.
 
-Technik: Felder `fl` (umgedreht), `oa` (Originalbetrag), `pc` (vorherige automatische Kategorie), `u` für den Sync-Abgleich; Schema bleibt 6 (nur zusätzliche Felder, ältere App-Versionen sehen einfach den umgedrehten Betrag). Re-Import: gleicher Hash, wird als Duplikat erkannt (mit Originalvorzeichen), die Umdrehung bleibt. Dauerposten sind ausgenommen. Neu erkannt: Spalte "Sender / Empfänger" als Gegenüber, "Buchungstext"/"Type" zur Plausibilitätsprüfung, Typ-Wörter Soll/Haben/Debit/Credit. Tests: `test_v11.js` (40 Prüfungen) und Browser-Test (Cache `finanzplaner-v11`).
+Technik: Felder `fl` (umgedreht), `oa` (Originalbetrag), `pc` (vorherige automatische Kategorie), `u` für den Sync-Abgleich; Schema bleibt 6 (nur zusätzliche Felder, ältere App-Versionen sehen einfach den umgedrehten Betrag). Re-Import: gleicher Hash, wird als Duplikat erkannt (mit Originalvorzeichen), die Umdrehung bleibt. Dauerposten sind ausgenommen. Neu erkannt: Spalte "Sender / Empfänger" als Gegenüber, "Buchungstext"/"Type" zur Plausibilitätsprüfung, Typ-Wörter Soll/Haben/Debit/Credit. Die früher erwähnte Datei `test_v11.js` liegt nicht im Repository; die aktuelle Suite ist `node test/core.test.js`.
 
 ## Version 12: Duplikate, PDF-Vorzeichen, Gehalt und Tanken nachvollziehbar
 
@@ -156,4 +170,22 @@ Technik: Felder `fl` (umgedreht), `oa` (Originalbetrag), `pc` (vorherige automat
 
 **Für bestehende Daten:** Nach dem Update Mehr, "Duplikate prüfen und bereinigen" ausführen. Wurden früher PDFs importiert, danach die neuesten CSV-Exporte der Konten (ganzer Zeitraum) noch einmal importieren: alte PDF-Buchungen bekommen dabei die CSV-Daten und das richtige Vorzeichen.
 
-Tests: `test_v12.js` (44 Prüfungen, synthetisch), alle älteren Suiten unverändert grün, Browser-Test (Cache `finanzplaner-v12`).
+Die früher erwähnte Datei `test_v12.js` liegt nicht im Repository. Die aktuelle Suite steht unter `test/core.test.js` (siehe Abschnitt Tests).
+
+## Version 13: Sparziele, Abo-Radar, Jahresrückblick, CSV, Hinweise
+
+**Aufteilung der Dateien.** `index.html` ist nur noch die Hülle (Inhalt, Content-Security-Policy, Skript-Reihenfolge). `style.css` enthält das Layout, `theme.js` setzt das gespeicherte Farbschema vor dem ersten Zeichnen, `core.js` ist die Logik (Parser, Kategorien, Budget, Sync-Verschlüsselung, neue Auswertungen) und `app.js` die Oberfläche. `core.js` und `app.js` sind normale Skripte in dieser Reihenfolge, damit die Oberfläche dieselben Funktionen sieht wie bisher. Tests laden `core.js` per `require`.
+
+**Bibliotheken und CSP.** Firebase 10.12.2 (modular) und pdf.js 3.11.174 liegen unter `vendor/` und werden nicht mehr von gstatic oder cdnjs geladen. `firebase-init.js` richtet dieselbe App ein wie vorher (`experimentalAutoDetectLongPolling`) und setzt `window.FB`. Der PDF-Worker kommt aus `vendor/pdf.worker.min.js` und läuft ohne `eval`. Die Content-Security-Policy erlaubt Skripte nur von der eigenen Herkunft, Styles und Schriften weiterhin von Google Fonts (die Oberfläche setzt Farben und Balkenbreiten als `style`-Attribut), Verbindungen zu Firestore und den Firebase-Auth-Hosts, Worker von der eigenen Herkunft und `blob:`.
+
+**Daten.** Schema bleibt 6. Neu und optional: `goals[]` (`id`, `n`, `target`, `by` als `YYYY-MM`, `have`, `cat`). Fehlt das Feld (älterer Client), ergänzt `normalizeState` ein leeres Array. Beim Sync gewinnt die Seite mit dem neueren Konfigurations-Zeitstempel; hat diese Seite das Feld nicht (alter Client), bleiben die Ziele der anderen Seite erhalten. Ein leeres Array ist eine bewusste Löschung. Bestehende Buchungen, Regeln, Pläne und der Tresor bleiben unverändert.
+
+**Sparziele** (Mehr, Sparziele, und eine Karte in der Monatsansicht). Name, Zielbetrag, Zielmonat, optional schon gespart, optional eine Kategorie. Der Fortschritt ist der schon gesparte Betrag plus die Ausgaben (negative Buchungen) dieser Kategorie. Beispiel: „Urlaub 1.500 €, noch 4 Monate“.
+
+**Abo-Radar** (Mehr, Abo-Radar). Wiederkehrende Abbuchungen: gleicher Händler, genau eine Buchung je betroffenem Monat, Abstand monatlich oder alle 3, 6 oder 12 Monate, mindestens drei Monate. Mehrere Buchungen im selben Monat (z. B. Supermarkt) zählen nicht. Liegt der letzte Betrag mehr als 5 % und mindestens 50 Cent über dem Median der früheren Monate, steht die Erhöhung oben und als Hinweis in der Monatsansicht.
+
+**Jahresrückblick** (Mehr, oder aus der Monatsansicht). Ausgaben je Kategorie gegen das Vorjahr, als Balkengrafik und Liste. Umbuchungen zählen nicht, Gehalt steht bei den Einnahmen. Das Jahr lässt sich umschalten.
+
+**CSV-Export** (Mehr, Daten, und im Kategorie-Sheet „CSV für JAHR“). Semikolon, Dezimalkomma, UTF-8 mit BOM, Spalten Datum, Konto, Kategorie, Händler, Verwendungszweck, Betrag. Filter: Kategorie, Jahr, nur Ausgaben oder nur Eingänge. Umbuchungen fehlen, außer die Kategorie ist ausdrücklich gewählt.
+
+**Budget-Hinweis.** Wird eine Kategorie neu gelb oder rot (oder von gelb zu rot), erscheint in der Monatsansicht eine Karte. Ausblenden merkt sich die Stufe für diesen Monat; wird es schlimmer oder wieder grün und dann erneut gelb, kommt der Hinweis zurück. „Auch als Mitteilung“ bzw. Mehr, Darstellung, Mitteilungen einschalten nutzt die Notification-API dieses Geräts, nur nach Tippen und nur solange die App geöffnet ist. Web-Push im Hintergrund braucht einen Server und ist nicht enthalten.

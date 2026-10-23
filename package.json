@@ -1,0 +1,8 @@
+{
+  "name": "finanzplaner",
+  "private": true,
+  "description": "Tests für die Parser- und Auswertungslogik. Die App selbst ist statisch und braucht kein npm.",
+  "scripts": {
+    "test": "node test/core.test.js"
+  }
+}

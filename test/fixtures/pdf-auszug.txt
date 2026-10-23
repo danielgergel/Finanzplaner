@@ -1,0 +1,11 @@
+Kontoauszug 3 / 2026
+Synthetischer Auszug, keine echten Daten
+01.03.2026 Beispiel GmbH Lohn/Gehalt 3.100,00
+02.03.2026 Vermieter Muster -800,00
+IBAN DE89370400440532013000
+Miete Wohnung Maerz
+03.03.2026 Ernst-Blick- 120,50
+04.03.2026 SHELL Station -61,40
+05.03.2026 NETFLIX.COM -12,99
+06.03.2026 REWE Markt -23,10
+Saldo neu 2.000,00
